@@ -2,97 +2,138 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A production-grade infrastructure repository for deploying ClaudyGod Music Ministries, featuring a modern, scalable architecture with Docker Compose (Docker Swarm ready) and Kubernetes manifests.
+A production-grade infrastructure repository for deploying ClaudyGod Music Ministries. **Aligned with your shared proxy architecture** (`~/apps/proxy` Traefik + socket-proxy) for enterprise-grade multi-tenant routing.
 
 ## 🎯 Overview
 
 This repository orchestrates the complete ClaudyGod stack:
 
-- **Frontend**: Next.js 14+ (TypeScript, Tailwind CSS)
-- **Backend**: .NET 8 ASP.NET Core (Clean Architecture, CQRS)
-- **Database**: PostgreSQL 16 (primary datastore)
-- **Cache**: Redis 7 (session storage, rate limit counters)
-- **Reverse Proxy**: Traefik v3.3 (automatic TLS via Let's Encrypt)
+- **Frontend**: Next.js 14+ (TypeScript, Tailwind CSS, Server Components, real-time updates)
+- **Backend**: .NET 8 ASP.NET Core (Clean Architecture, CQRS, WebSocket + SSE, real-time API)
+- **Database**: PostgreSQL 16 (primary datastore) — Supabase compatible
+- **Cache**: Redis 7 (session storage, real-time subscriptions, message queue)
+- **Reverse Proxy**: Traefik v3.6 (via shared proxy at `~/apps/proxy`)
+- **Socket Security**: docker-socket-proxy (isolates Docker API access)
+- **Error Handling**: Error-service (custom 500-599 pages)
 - **AI Integration**: Anthropic Claude (payment slip validation)
 - **Payment**: Paystack (NGN) + Zelle (USD, AI-validated)
 - **Email**: Gmail SMTP (transactional emails)
+- **Monitoring**: Prometheus metrics (via shared Traefik)
 
 ### Architecture Highlights
 
-- 🔒 **Security-First**: Non-root containers, network isolation, HSTS, CSP headers
-- 🚀 **High Performance**: Gzip compression, HTTP/2, Redis caching, connection pooling
-- 📈 **Scalable**: Horizontal pod autoscaling (HPA) ready, rate limiting, health checks
-- 🔄 **CI/CD Ready**: GitHub Actions SSH deploy + Watchtower support
-- 🛡️ **Resilient**: Automatic HTTPS, health checks, graceful shutdown, backup automation
+- 🔒 **Enterprise Security**: Socket-proxy isolation, non-root containers, network segmentation
+- 🚀 **High Performance**: HTTP/2, Gzip, Redis caching, connection pooling, compression
+- 📈 **Real-Time Ready**: WebSocket support, SSE, live updates, async queues
+- 🌐 **Multi-Tenant**: Shares proxy infrastructure with other apps (WisdomChurch, etc.)
+- 🔄 **Modern Stack**: Server Components, CQRS, event-driven architecture
+- 🛡️ **Resilient**: Health checks, error service integration, graceful shutdown, automated backups
 
 ---
 
 ## 📋 Prerequisites
 
-### Development/Testing
+### Shared Proxy Architecture (Recommended)
+
+Your server already has the shared proxy infrastructure set up at `~/apps/proxy`:
+- ✅ Traefik v3.6 running
+- ✅ docker-socket-proxy for security
+- ✅ error-service for error pages (500-599)
+- ✅ `traefik-public` network exists
+- ✅ Let's Encrypt ACME HTTP challenge
+
+**This deployment adds ClaudyGod services to that shared infrastructure.**
+
+### Local Development
 
 - Docker 25+ and docker-compose plugin
-- Ports 80 and 443 available (for Traefik)
+- Ports 80 and 443 available (for testing)
 - 2GB+ free disk space
 - Internet connection (to pull images from GHCR)
 
-### Production Deployment
+### Production Deployment (Shared Proxy Server)
 
-- Linux VPS (Ubuntu 22.04+, Debian 12+, etc.)
-- Docker & docker-compose plugin installed
+**Assume you're deploying to the same server as `~/apps/proxy`:**
+
+- Linux server (Ubuntu 22.04+, Debian 12+)
+- Docker & docker-compose plugin already installed
+- Shared `traefik-public` network already exists
 - DNS A records pointing to server IP:
-  - `claudygod.com` → VPS IP
-  - `api.claudygod.com` → VPS IP
+  - `claudygod.org` → Server IP
+  - `www.claudygod.org` → Server IP (redirects to claudygod.org)
+  - `api.claudygod.org` → Server IP
+  - `blog.claudygod.org` → Server IP (optional)
+- Traefik + socket-proxy + error-service running (from `~/apps/proxy`)
 - Email SMTP credentials (Gmail or custom)
-- Paystack API keys
-- Anthropic Claude API key
+- Paystack API keys (production)
+- Anthropic Claude API key (production)
 - GitHub Container Registry (GHCR) credentials
 
 ### Optional (for Kubernetes)
 
-- Managed Kubernetes cluster (GKE, EKS, AKS) OR self-hosted (k3s, kubeadm)
+- Managed Kubernetes cluster (GKE, EKS, AKS) OR k3s/kubeadm
 - `kubectl` CLI configured
-- Helm 3+ (optional, for easier management)
+- Helm 3+ (optional)
 
 ---
 
-## 🚀 Quick Start (Docker Compose)
+## 🚀 Quick Start (Shared Proxy Deployment)
 
-### 1. Clone and Configure
+This assumes your server already has `~/apps/proxy` running with Traefik v3.6, socket-proxy, and error-service.
+
+### 1. Clone Repository
 
 ```bash
-# Clone this repository
-git clone https://github.com/ClaudyGod-MusicMinistries/ClaudyGodweb-Infrastructure.git
-cd ClaudyGodweb-Infrastructure
-
-# Copy configuration template
-cp .env.example .env
-nano .env  # Fill in all CHANGE_ME values
+# Clone into apps directory (alongside proxy)
+cd ~/apps
+git clone https://github.com/ClaudyGod-MusicMinistries/ClaudyGodweb-Infrastructure.git claudygod
+cd claudygod
 ```
 
 ### 2. Generate Secure Secrets
 
 ```bash
-# Generate random values for secrets
-echo "JWT_KEY=$(openssl rand -base64 48)"
-echo "ENCRYPTION_KEY=$(openssl rand -base64 32)"
-echo "POSTGRES_PASSWORD=$(openssl rand -base64 32)"
-echo "REDIS_PASSWORD=$(openssl rand -base64 32)"
+# Generate strong random values
+JWT_KEY=$(openssl rand -base64 48)
+ENCRYPTION_KEY=$(openssl rand -base64 32)
+POSTGRES_PASSWORD=$(openssl rand -base64 32)
+REDIS_PASSWORD=$(openssl rand -base64 32)
+
+# Display for copy-paste into .env
+echo "JWT_KEY=$JWT_KEY"
+echo "ENCRYPTION_KEY=$ENCRYPTION_KEY"
+echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+echo "REDIS_PASSWORD=$REDIS_PASSWORD"
 ```
 
-Update your `.env` file with these values.
-
-### 3. One-Time Server Setup
+### 3. Configure Environment
 
 ```bash
-# Create external Docker network (only once per server)
-docker network create traefik-public
+# Copy template and fill in secrets
+cp .env.example .env
+nano .env
 
-# Verify the network exists
-docker network ls | grep traefik-public
+# Required changes:
+# - JWT_KEY=<generated value>
+# - ENCRYPTION_KEY=<generated value>
+# - POSTGRES_PASSWORD=<generated value>
+# - REDIS_PASSWORD=<generated value>
+# - EMAIL_SMTP_PASSWORD=<gmail app password>
+# - PAYSTACK_SECRET_KEY=<from dashboard>
+# - NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY=<from dashboard>
+# - ANTHROPIC_API_KEY=<from console>
 ```
 
-### 4. Deploy
+### 4. Verify Shared Network Exists
+
+```bash
+# Confirm traefik-public network exists (created by ~/apps/proxy)
+docker network ls | grep traefik-public
+
+# If missing, the shared proxy setup is incomplete
+```
+
+### 5. Deploy
 
 ```bash
 # Full deployment (pulls images, runs migrations, starts services)
@@ -103,18 +144,37 @@ docker compose pull
 docker compose up -d --remove-orphans
 ```
 
-### 5. Verify Deployment
+### 6. Verify Deployment
 
 ```bash
 # Check service status
 make ps
 
-# Watch logs
+# Watch logs in real-time
 make logs
 
-# Test health endpoints (after ~60s for services to start)
-curl https://api.claudygod.com/healthz
-curl https://claudygod.com/
+# Check API health (after ~60s for startup)
+curl -k https://api.claudygod.org/healthz
+
+# Check frontend
+curl -k https://claudygod.org/
+
+# View error service (intentional error for testing)
+curl -k https://api.claudygod.org/test-500
+```
+
+### 7. Verify Traefik Integration
+
+```bash
+# SSH into server and check Traefik has picked up labels
+cd ~/apps/proxy
+docker compose logs traefik | grep claudygod
+
+# Should see router registrations for:
+# - claudygod-api-http
+# - claudygod-api-secure
+# - claudygod-web-http
+# - claudygod-web-secure
 ```
 
 ---
