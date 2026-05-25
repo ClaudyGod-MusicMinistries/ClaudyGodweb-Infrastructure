@@ -1,0 +1,19 @@
+################################################################################
+#                    GRAFANA PROMETHEUS DATA SOURCE                            #
+#                                                                              #
+# Grafana automatically discovers Prometheus metrics from Traefik.            #
+# This data source points to Prometheus running in the shared proxy.          #
+#                                                                              #
+################################################################################
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 30s

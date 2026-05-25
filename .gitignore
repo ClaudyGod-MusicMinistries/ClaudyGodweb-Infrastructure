@@ -1,0 +1,56 @@
+# Environment variables (never commit real secrets)
+.env
+.env.local
+.env.*.local
+
+# Traefik ACME certificates (sensitive, generated at runtime)
+docker/traefik/acme.json
+
+# Logs and temporary files
+*.log
+logs/
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+.idea/
+
+# Database exports and backups (local only, not for repo)
+backups/
+dumps/
+*.sql
+*.sql.gz
+
+# Container artifacts
+.dockerignore
+docker/*/node_modules
+docker/*/.next
+docker/*/dist
+
+# Kubernetes secrets (never commit real secrets)
+k8s/configs/secret.yaml
+k8s/**/*-secrets.yaml
+
+# IDE and editor files
+.vscode/
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Node package manager lock files (optional for stability)
+# Uncomment if you want consistency across installs
+# node_modules/
+# package-lock.json

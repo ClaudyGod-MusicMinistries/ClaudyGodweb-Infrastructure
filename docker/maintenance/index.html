@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maintenance — ClaudyGod Music Ministries</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 60px 40px;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.6s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+
+        .maintenance-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            animation: rotate 2s linear infinite;
+        }
+
+        @keyframes rotate {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        p {
+            font-size: 1.1em;
+            line-height: 1.6;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .status {
+            display: inline-block;
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+            font-weight: 500;
+            color: #856404;
+        }
+
+        .contact {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #eee;
+            font-size: 0.95em;
+            color: #999;
+        }
+
+        .contact a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .contact a:hover {
+            text-decoration: underline;
+        }
+
+        .follow {
+            margin-top: 20px;
+        }
+
+        .social {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 15px;
+        }
+
+        .social a {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            line-height: 40px;
+            transition: transform 0.3s ease, background 0.3s ease;
+        }
+
+        .social a:hover {
+            background: #764ba2;
+            transform: scale(1.1);
+        }
+
+        .eta {
+            margin-top: 20px;
+            font-size: 0.9em;
+            color: #999;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="maintenance-icon">🔧</div>
+        <h1>Maintenance in Progress</h1>
+
+        <p>We're currently updating ClaudyGod Music Ministries to serve you better.</p>
+
+        <div class="status">
+            <strong>HTTP 503 — Service Temporarily Unavailable</strong>
+        </div>
+
+        <p>We'll be back online shortly. Thank you for your patience!</p>
+
+        <div class="contact">
+            <p>Need to reach us?</p>
+            <p>
+                <a href="mailto:contact@claudygod.com">Email: contact@claudygod.com</a>
+            </p>
+            <p>
+                <a href="tel:+1234567890">Phone: +1 (234) 567-890</a>
+            </p>
+
+            <div class="follow">
+                <p>Follow us on social media for updates:</p>
+                <div class="social">
+                    <a href="https://facebook.com/claudygod" title="Facebook" aria-label="Facebook">f</a>
+                    <a href="https://instagram.com/claudygod" title="Instagram" aria-label="Instagram">📷</a>
+                    <a href="https://youtube.com/claudygod" title="YouTube" aria-label="YouTube">▶️</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="eta">
+            Last updated: <span id="timestamp"></span>
+        </div>
+    </div>
+
+    <script>
+        // Display maintenance start time
+        document.getElementById('timestamp').textContent = new Date().toLocaleString();
+    </script>
+</body>
+</html>

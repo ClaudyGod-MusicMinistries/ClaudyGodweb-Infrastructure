@@ -1,0 +1,101 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Infrastructure
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS via SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # Deploy
+          ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" <<'DEPLOY_SCRIPT'
+          set -euo pipefail
+
+          echo "🚀 Starting deployment..."
+
+          # Navigate to deployment directory
+          cd "${{ env.VPS_DEPLOY_PATH }}" || exit 1
+
+          # Pull latest code
+          git pull origin main
+
+          # Pull latest images
+          docker compose pull
+
+          # Run migrations
+          docker compose run --rm migrate
+
+          # Deploy with zero downtime
+          docker compose up -d --remove-orphans
+
+          echo "✅ Deployment complete!"
+          docker compose ps
+          DEPLOY_SCRIPT
+
+      - name: Send Slack notification on success
+        if: success()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "✅ ClaudyGod infrastructure deployed successfully!",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*ClaudyGod Infrastructure Deployment*\n✅ Deployment Successful\n\n*Details:*\n• Environment: production\n• Trigger: ${{ github.event_name }}\n• Commit: <https://github.com/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>"
+                  }
+                }
+              ]
+            }
+
+      - name: Send Slack notification on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "❌ ClaudyGod infrastructure deployment failed!",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*ClaudyGod Infrastructure Deployment*\n❌ Deployment Failed\n\n*Details:*\n• Environment: production\n• Trigger: ${{ github.event_name }}\n• Commit: <https://github.com/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n• View logs: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions>"
+                  }
+                }
+              ]
+            }

@@ -1,0 +1,66 @@
+################################################################################
+#           MAINTENANCE MODE DOCKER COMPOSE OVERLAY                            #
+#                                                                              #
+# Use this overlay to put the entire site in maintenance mode without         #
+# bringing down the actual services.                                          #
+#                                                                              #
+# Usage:                                                                       #
+#   $ docker compose -f docker-compose.yml \                                 #
+#                    -f docker-compose.maintenance.yml \                     #
+#                    up -d                                                    #
+#                                                                              #
+# This will intercept all traffic and return a 503 Maintenance page.         #
+# To disable maintenance mode, re-run without this overlay:                  #
+#   $ docker compose up -d                                                   #
+#                                                                              #
+# The maintenance router has higher priority (1000) than normal routers       #
+# (100-500), ensuring it intercepts all requests.                            #
+#                                                                              #
+################################################################################
+
+version: '3.9'
+
+services:
+
+  maintenance:
+    image: kennethreitz/httpbin  # Or any lightweight HTTP server
+    container_name: claudygod_maintenance
+    restart: unless-stopped
+
+    networks:
+      - traefik-public
+
+    expose:
+      - "80"
+
+    # Override image with a simple maintenance response
+    command: [
+      "python", "-m", "http.server",
+      "--bind", "0.0.0.0", "--port", "80",
+      "--directory", "/maintenance"
+    ]
+
+    volumes:
+      # Mount maintenance HTML page
+      - ./docker/maintenance:/maintenance:ro
+
+    labels:
+      # CRITICAL: priority=1000 intercepts ALL traffic before normal routers
+      # Normal routers have priority ~100-500
+      - "traefik.enable=true"
+
+      # Catch-all router for all domains
+      - "traefik.http.routers.maintenance.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.maintenance.entrypoints=web,websecure"
+      - "traefik.http.routers.maintenance.service=maintenance"
+      - "traefik.http.routers.maintenance.priority=1000"  # High priority to intercept all
+      - "traefik.http.routers.maintenance.tls=true"
+
+      # Service configuration
+      - "traefik.http.services.maintenance.loadbalancer.server.port=80"
+
+
+networks:
+  traefik-public:
+    external: true
+    name: traefik-public
