@@ -1,0 +1,184 @@
+################################################################################
+#                   TRAEFIK DYNAMIC CONFIGURATION (dynamic.yml)               #
+#                                                                              #
+# This file defines Traefik middleware and is watched for changes.            #
+# It defines:                                                                  #
+# - Middleware (security headers, rate limiting, compression)                 #
+# - Service definitions                                                       #
+# - Global configuration                                                      #
+#                                                                              #
+# Routers are defined as labels in docker-compose.yml services               #
+#                                                                              #
+################################################################################
+
+http:
+
+  ################################################################################
+  #                            MIDDLEWARES                                       #
+  ################################################################################
+
+  middlewares:
+
+    ################################################################################
+    #                    SECURITY HEADERS MIDDLEWARE                             #
+    ################################################################################
+
+    secureHeaders:
+      headers:
+        # Prevent MIME type sniffing
+        contentTypeNosniff: true
+        # Prevent clickjacking
+        frameDeny: true
+        # Strict Transport Security (enforce HTTPS)
+        stsSeconds: 63072000  # 2 years
+        stsIncludeSubdomains: true
+        stsPreload: true
+        # Referer policy
+        referrerPolicy: "strict-origin-when-cross-origin"
+        # Permissions policy (formerly Feature-Policy)
+        permissionsPolicy: >
+          geolocation=(),
+          microphone=(),
+          camera=(),
+          payment=(),
+          usb=(),
+          magnetometer=(),
+          gyroscope=(),
+          accelerometer=()
+        # Custom headers
+        customRequestHeaders:
+          # Remove server identification
+          X-Powered-By: ""
+          Server: ""
+        customResponseHeaders:
+          # Prevent MIME type sniffing
+          X-Content-Type-Options: "nosniff"
+          X-Frame-Options: "SAMEORIGIN"
+          X-XSS-Protection: "1; mode=block"
+          Referrer-Policy: "strict-origin-when-cross-origin"
+
+
+    ################################################################################
+    #                      COMPRESSION MIDDLEWARE                                 #
+    ################################################################################
+
+    compression:
+      compress:
+        # Exclude certain content types from compression (e.g., SSE streams)
+        excludedContentTypes:
+          - "text/event-stream"
+          - "application/octet-stream"
+          - "image/jpeg"
+          - "image/png"
+          - "image/webp"
+
+
+    ################################################################################
+    #                      RATE LIMITING MIDDLEWARE                               #
+    ################################################################################
+
+    # Authentication endpoints (login, register) — stricter limits
+    authRateLimit:
+      rateLimit:
+        average: 10  # 10 requests
+        burst: 5     # burst of 5
+        period: 5m   # per 5 minutes
+        sourcecriterion:
+          ipstrategy:
+            depth: 1
+
+    # AI endpoints (expensive operations) — stricter limits
+    aiRateLimit:
+      rateLimit:
+        average: 10  # 10 requests
+        burst: 3     # burst of 3
+        period: 1m   # per minute
+        sourcecriterion:
+          ipstrategy:
+            depth: 1
+
+    # Global rate limit (all other endpoints)
+    globalRateLimit:
+      rateLimit:
+        average: 100  # 100 requests
+        burst: 50     # burst of 50
+        period: 1m    # per minute
+        sourcecriterion:
+          ipstrategy:
+            depth: 1
+
+
+    ################################################################################
+    #                       REDIRECT MIDDLEWARE                                   #
+    ################################################################################
+
+    # HTTP → HTTPS redirect
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    # www → non-www redirect
+    wwwRedirect:
+      redirectregex:
+        regex: "^https://www\\.(.+)"
+        replacement: "https://${1}"
+        permanent: true
+
+
+    ################################################################################
+    #                      PREFIX STRIPPING MIDDLEWARE                            #
+    ################################################################################
+
+    # Strip /api prefix before forwarding to .NET backend
+    # Example: /api/v1/users → /v1/users (for internal routing)
+    stripApiPrefix:
+      stripPrefix:
+        prefixes:
+          - "/api"
+        forceSlash: true
+
+
+  ################################################################################
+  #                        ROUTERS & SERVICES                                   #
+  ################################################################################
+
+  routers: {}
+  # Routers are defined in docker-compose.yml as service labels
+  # This keeps container-specific routing with their definitions
+
+  services: {}
+  # Services are auto-discovered from Docker labels
+
+
+################################################################################
+#                           TLS CONFIGURATION                                 #
+################################################################################
+
+tls:
+  options:
+    modern:
+      # TLS version: 1.2 minimum
+      minVersion: "VersionTLS12"
+      # Cipher suites (modern, secure)
+      cipherSuites:
+        # TLS 1.3
+        - "TLS_AES_128_GCM_SHA256"
+        - "TLS_AES_256_GCM_SHA384"
+        - "TLS_CHACHA20_POLY1305_SHA256"
+        # TLS 1.2
+        - "ECDHE-ECDSA-AES128-GCM-SHA256"
+        - "ECDHE-RSA-AES128-GCM-SHA256"
+        - "ECDHE-ECDSA-AES256-GCM-SHA384"
+        - "ECDHE-RSA-AES256-GCM-SHA384"
+        - "ECDHE-ECDSA-CHACHA20-POLY1305"
+        - "ECDHE-RSA-CHACHA20-POLY1305"
+      # Prefer server cipher suites
+      preferServerCipherSuites: true
+      # Require SNI
+      sniStrict: true
+      # ALPN protocols
+      alpnProtocols:
+        - h2
+        - h2c
+        - http/1.1
