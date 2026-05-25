@@ -1,0 +1,141 @@
+################################################################################
+#                    TRAEFIK STATIC CONFIGURATION (traefik.yml)               #
+#                                                                              #
+# This file contains Traefik's permanent settings:                            #
+# - Entrypoints (ports 80, 443)                                              #
+# - Providers (Docker, file-based)                                            #
+# - Certificate resolver (Let's Encrypt ACME)                                 #
+# - API & Dashboard                                                           #
+# - Logging                                                                   #
+#                                                                              #
+# Dynamic configuration (routers, middlewares) is in dynamic.yml              #
+#                                                                              #
+################################################################################
+
+global:
+  # Report HTTP trailers
+  checkNewVersion: false
+  # Send anonymous usage data to Traefik
+  sendAnonymousUsage: false
+
+################################################################################
+#                           ENTRYPOINTS                                        #
+################################################################################
+
+entryPoints:
+  web:
+    address: ":80"
+    # Redirect all HTTP to HTTPS
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+
+  websecure:
+    address: ":443"
+    http:
+      # Enable HTTP/2 for better performance
+      http2: {}
+    # TLS configuration
+    transport:
+      lifeCycle:
+        # Time to drain connections on shutdown
+        graceTimeout: 30s
+
+  metrics:
+    address: ":9090"
+
+################################################################################
+#                        CERTIFICATE RESOLVERS                                 #
+################################################################################
+
+certificateResolvers:
+  letsencrypt:
+    acme:
+      # Let's Encrypt email (for expiry notifications)
+      email: ${ACME_EMAIL}
+      # Storage file for certificates
+      storage: /acme/acme.json
+      # TLS challenge
+      tlsChallenge: {}
+      # Certificate validity period
+      certificateDuration: 2160h  # 90 days (Let's Encrypt default)
+
+################################################################################
+#                          PROVIDERS                                           #
+################################################################################
+
+providers:
+  # Docker provider (auto-discover containers with Traefik labels)
+  docker:
+    # Only monitor containers with explicit traefik.enable=true label
+    exposedByDefault: false
+    # Use the Docker network specified in docker-compose
+    network: traefik-public
+
+  # File provider (for dynamic.yml middleware definitions)
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+################################################################################
+#                       API & DASHBOARD (DEBUG)                               #
+################################################################################
+
+api:
+  # Enable Traefik dashboard
+  dashboard: true
+  # API server (for metrics, debugging)
+  insecure: true  # http://127.0.0.1:8080/dashboard (localhost only, OK for dev)
+
+################################################################################
+#                            LOGGING                                           #
+################################################################################
+
+# Console logging (go to Docker logs)
+log:
+  level: INFO
+  format: json
+
+# HTTP access logs (JSON format for structured logging)
+accessLog:
+  format: json
+  filePath: /var/log/traefik/access.log
+  # Only log requests with specific status codes or duration
+  fields:
+    names:
+      ClientUsername: drop
+    defaultMode: keep
+  filters:
+    # Log all 4xx and 5xx errors
+    statusCodes:
+      - "400-499"
+      - "500-599"
+    # Log slow requests (> 100ms)
+    duration: 100ms
+
+################################################################################
+#                        TELEMETRY & METRICS (OPTIONAL)                       #
+################################################################################
+
+# Uncomment to enable Prometheus metrics
+# metrics:
+#   prometheus:
+#     addEntryPointsLabels: true
+#     addServicesLabels: true
+#     buckets:
+#       - 0.1
+#       - 0.3
+#       - 1.0
+#       - 2.0
+#       - 5.0
+#     entryPoint: metrics
+
+################################################################################
+#                        EXPERIMENTAL (OPTIONAL)                              #
+################################################################################
+
+experimental:
+  # Optional: enable Local Plugins (advanced use)
+  localPlugins: {}

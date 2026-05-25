@@ -1,0 +1,451 @@
+################################################################################
+#                     CLAUDYGOD PRODUCTION DOCKER COMPOSE                      #
+#                                                                              #
+# This is the primary production orchestration for the ClaudyGod stack:       #
+# - Traefik v3.3 (reverse proxy + TLS termination)                           #
+# - PostgreSQL 16 (primary database)                                          #
+# - Redis 7 (cache + session store)                                           #
+# - .NET 8 API (backend, Clean Architecture)                                  #
+# - Next.js 14+ (frontend)                                                    #
+# - EF Core Migrate job (database migrations)                                 #
+#                                                                              #
+# Deploy:                                                                      #
+#   $ docker network create traefik-public  (one-time setup)                 #
+#   $ cp .env.example .env && nano .env     (configure secrets)              #
+#   $ docker compose up -d --build                                           #
+#                                                                              #
+# Pre-requirements:                                                            #
+# - Docker 25+ and docker-compose plugin                                      #
+# - .env file with all secrets filled in                                      #
+# - Ports 80 and 443 open on the server                                       #
+# - DNS A records pointing to server IP                                       #
+#                                                                              #
+################################################################################
+
+version: '3.9'
+
+# Project name (will prefix all containers)
+name: claudygod
+
+services:
+
+  ################################################################################
+  #                            TRAEFIK REVERSE PROXY                            #
+  ################################################################################
+
+  traefik:
+    image: traefik:v3.3
+    container_name: claudygod_traefik
+    restart: unless-stopped
+
+    # Security: run as unprivileged user inside container
+    user: "65534:65534"  # nobody:nogroup
+
+    networks:
+      - traefik-public
+
+    ports:
+      # HTTP (will redirect to HTTPS automatically)
+      - "80:80"
+      # HTTPS
+      - "443:443"
+      # Traefik API/Dashboard (internal, not exposed to internet)
+      - "127.0.0.1:8080:8080"
+
+    volumes:
+      # Docker socket for dynamic routing discovery
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+      # Traefik static configuration
+      - ./docker/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+
+      # Traefik dynamic configuration (middleware, routers, services)
+      - ./docker/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+
+      # ACME certificates storage (Let's Encrypt)
+      - traefik_acme:/acme:rw
+
+      # Access logs (JSON format)
+      - ./logs/traefik:/var/log/traefik:rw
+
+    environment:
+      # Traefik environment variables
+      TRAEFIK_API_DASHBOARD: "true"
+      TRAEFIK_API_DEBUG: "false"
+
+    labels:
+      # Prevent Traefik from routing to itself
+      - "traefik.enable=false"
+
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    depends_on:
+      - db
+      - redis
+
+
+  ################################################################################
+  #                         POSTGRESQL DATABASE                                 #
+  ################################################################################
+
+  db:
+    image: postgres:16-alpine
+    container_name: claudygod_db
+    restart: unless-stopped
+
+    networks:
+      - internal
+
+    # Do NOT expose port 5432 to the internet
+    # Only accessible from `internal` network
+    expose:
+      - "5432"
+
+    volumes:
+      # Named volume for persistent data (survives container restart)
+      - db_data:/var/lib/postgresql/data
+
+      # Optional: initial seed script
+      # - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # Performance tuning for production
+      POSTGRES_INITDB_ARGS: >
+        -c shared_buffers=256MB
+        -c effective_cache_size=1GB
+        -c maintenance_work_mem=64MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c default_statistics_target=100
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+        -c work_mem=4MB
+        -c min_wal_size=1GB
+        -c max_wal_size=4GB
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+  ################################################################################
+  #                            REDIS CACHE/SESSIONS                            #
+  ################################################################################
+
+  redis:
+    image: redis:7-alpine
+    container_name: claudygod_redis
+    restart: unless-stopped
+
+    networks:
+      - internal
+
+    expose:
+      - "6379"
+
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 512mb
+      --maxmemory-policy ${REDIS_MAX_MEMORY_POLICY:-allkeys-lru}
+      --appendonly yes
+      --appendfsync everysec
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+  ################################################################################
+  #                      EF CORE DATABASE MIGRATION JOB                         #
+  ################################################################################
+
+  migrate:
+    image: ${BACKEND_IMAGE}
+    container_name: claudygod_migrate
+    restart: "no"
+
+    networks:
+      - internal
+
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: >
+        Host=db;
+        Port=5432;
+        Database=${POSTGRES_DB};
+        Username=${POSTGRES_USER};
+        Password=${POSTGRES_PASSWORD};
+        Pooling=true;
+        MinPoolSize=1;
+        MaxPoolSize=5;
+
+    entrypoint: [
+      "dotnet",
+      "ClaudyGod.API.dll",
+      "--migrate"
+    ]
+
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    # Retry on failure (migration might need to retry if DB is initializing)
+    restart: on-failure:3
+
+
+  ################################################################################
+  #                         .NET 8 BACKEND API                                  #
+  ################################################################################
+
+  api:
+    image: ${BACKEND_IMAGE}
+    container_name: claudygod_api
+    restart: unless-stopped
+
+    networks:
+      - traefik-public
+      - internal
+
+    expose:
+      - "8080"
+
+    # Do NOT publish port 8080 to host (Traefik handles routing)
+    # If you need direct access for debugging, uncomment:
+    # ports:
+    #   - "127.0.0.1:8080:8080"
+
+    volumes:
+      # File uploads (mounted from host)
+      - api_uploads:/app/uploads:rw
+
+      # Application logs (persistent)
+      - api_logs:/app/logs:rw
+
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+
+      # Database connection string
+      ConnectionStrings__DefaultConnection: >
+        Host=db;
+        Port=5432;
+        Database=${POSTGRES_DB};
+        Username=${POSTGRES_USER};
+        Password=${POSTGRES_PASSWORD};
+        Pooling=true;
+        MinPoolSize=1;
+        MaxPoolSize=20;
+
+      # Redis cache
+      ConnectionStrings__RedisConnection: redis://:${REDIS_PASSWORD}@redis:6379
+
+      # JWT configuration
+      JwtSettings__SecretKey: ${JWT_KEY}
+      JwtSettings__Issuer: https://${API_DOMAIN}
+      JwtSettings__Audience: https://${DOMAIN}
+      JwtSettings__ExpirationMinutes: "60"
+      JwtSettings__RefreshTokenExpirationDays: "7"
+
+      # Encryption
+      EncryptionSettings__Key: ${ENCRYPTION_KEY}
+
+      # Email (SMTP)
+      EmailSettings__SmtpHost: ${EMAIL_SMTP_HOST}
+      EmailSettings__SmtpPort: ${EMAIL_SMTP_PORT}
+      EmailSettings__SmtpUsername: ${EMAIL_SMTP_USERNAME}
+      EmailSettings__SmtpPassword: ${EMAIL_SMTP_PASSWORD}
+      EmailSettings__FromAddress: ${EMAIL_FROM_ADDRESS}
+      EmailSettings__FromName: ${EMAIL_FROM_NAME}
+      EmailSettings__AdminEmail: ${EMAIL_ADMIN}
+      EmailSettings__UseTls: "true"
+
+      # Paystack (payment gateway)
+      PaystackSettings__SecretKey: ${PAYSTACK_SECRET_KEY}
+      PaystackSettings__PublicKey: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY}
+
+      # Anthropic Claude AI
+      AnthropicSettings__ApiKey: ${ANTHROPIC_API_KEY}
+      AnthropicSettings__Model: ${CLAUDE_MODEL}
+
+      # CORS (allow frontend and localhost)
+      CorsOrigins: "https://${DOMAIN},https://www.${DOMAIN},https://${API_DOMAIN},http://localhost:3000,http://localhost:1005"
+
+      # Logging
+      Serilog__MinimumLevel: "Information"
+      Serilog__WriteTo__0__Name: "Console"
+      Serilog__WriteTo__1__Name: "File"
+      Serilog__WriteTo__1__Args__path: "/app/logs/api-.txt"
+      Serilog__WriteTo__1__Args__rollingInterval: "Day"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    # Traefik routing labels
+    labels:
+      - "traefik.enable=true"
+
+      # HTTPS router for API domain
+      - "traefik.http.routers.api-secure.rule=Host(`${API_DOMAIN}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api-secure.entrypoints=websecure"
+      - "traefik.http.routers.api-secure.tls=true"
+      - "traefik.http.routers.api-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api-secure.middlewares=stripApiPrefix@file,secureHeaders@file,compression@file,authRateLimit@file"
+      - "traefik.http.routers.api-secure.service=api"
+
+      # HTTP router (redirect to HTTPS)
+      - "traefik.http.routers.api-http.rule=Host(`${API_DOMAIN}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api-http.entrypoints=web"
+      - "traefik.http.routers.api-http.middlewares=redirect-to-https"
+
+      # Health check endpoint (unprotected)
+      - "traefik.http.routers.api-health.rule=Host(`${API_DOMAIN}`) && Path(`/healthz`)"
+      - "traefik.http.routers.api-health.entrypoints=websecure"
+      - "traefik.http.routers.api-health.tls=true"
+      - "traefik.http.routers.api-health.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api-health.service=api"
+
+      # Service configuration
+      - "traefik.http.services.api.loadbalancer.server.port=8080"
+      - "traefik.http.services.api.loadbalancer.healthcheck.path=/healthz"
+      - "traefik.http.services.api.loadbalancer.healthcheck.interval=30s"
+
+
+  ################################################################################
+  #                        NEXT.JS FRONTEND                                     #
+  ################################################################################
+
+  web:
+    image: ${FRONTEND_IMAGE}
+    container_name: claudygod_web
+    restart: unless-stopped
+
+    networks:
+      - traefik-public
+      - internal
+
+    expose:
+      - "3000"
+
+    environment:
+      # Next.js production mode
+      NODE_ENV: production
+
+      # API URL (must be production domain)
+      NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+      NEXT_PUBLIC_SITE_URL: https://${DOMAIN}
+
+      # Disable telemetry
+      NEXT_TELEMETRY_DISABLED: 1
+
+      # Paystack public key
+      NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY}
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    # Traefik routing labels
+    labels:
+      - "traefik.enable=true"
+
+      # HTTPS router for primary domain
+      - "traefik.http.routers.web-secure.rule=Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)"
+      - "traefik.http.routers.web-secure.entrypoints=websecure"
+      - "traefik.http.routers.web-secure.tls=true"
+      - "traefik.http.routers.web-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.web-secure.middlewares=wwwRedirect@file,secureHeaders@file,compression@file,globalRateLimit@file"
+      - "traefik.http.routers.web-secure.service=web"
+
+      # HTTP router (redirect to HTTPS)
+      - "traefik.http.routers.web-http.rule=Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)"
+      - "traefik.http.routers.web-http.entrypoints=web"
+      - "traefik.http.routers.web-http.middlewares=redirect-to-https"
+
+      # Service configuration
+      - "traefik.http.services.web.loadbalancer.server.port=3000"
+
+
+################################################################################
+#                         NETWORKS (ISOLATION)                                #
+################################################################################
+
+networks:
+  # External network for internet-facing services (Traefik, frontend, API)
+  # Pre-create with: docker network create traefik-public
+  traefik-public:
+    external: true
+    name: traefik-public
+
+  # Internal network for databases/caches (no outbound internet)
+  internal:
+    internal: true
+
+
+################################################################################
+#                         NAMED VOLUMES                                        #
+################################################################################
+
+volumes:
+  # Traefik ACME certificates (Let's Encrypt)
+  traefik_acme:
+    name: claudygod_traefik_acme
+
+  # PostgreSQL data (persistent across container restarts)
+  db_data:
+    name: claudygod_db_data
+
+  # Redis data (AOF snapshot for persistence)
+  redis_data:
+    name: claudygod_redis_data
+
+  # API file uploads (user-generated content)
+  api_uploads:
+    name: claudygod_api_uploads
+
+  # API logs (application logs for debugging)
+  api_logs:
+    name: claudygod_api_logs
