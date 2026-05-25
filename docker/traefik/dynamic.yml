@@ -1,0 +1,158 @@
+################################################################################
+#                  TRAEFIK DYNAMIC CONFIGURATION (v3.6)                       #
+#                                                                              #
+# Aligned with shared proxy middleware patterns                               #
+# Defines: security headers, rate limiting, error handling, compression       #
+#                                                                              #
+################################################################################
+
+http:
+
+  middlewares:
+
+    # ─────────────────────────────────────────────────────────────────────
+    # SECURITY HEADERS
+    # ─────────────────────────────────────────────────────────────────────
+
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        permissionsPolicy: "camera=(), microphone=(), geolocation=()"
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        customResponseHeaders:
+          X-Robots-Tag: ""
+          Server: ""
+
+    # ─────────────────────────────────────────────────────────────────────
+    # RATE LIMITING
+    # ─────────────────────────────────────────────────────────────────────
+
+    rate-limit:
+      rateLimit:
+        average: 100
+        period: "1s"
+        burst: 200
+
+    # Global rate limit (all endpoints)
+    rate-limit-global:
+      rateLimit:
+        average: 100
+        period: "1s"
+        burst: 200
+        sourcecriterion:
+          ipstrategy:
+            depth: 1
+
+    # Auth endpoints (stricter)
+    rate-limit-auth:
+      rateLimit:
+        average: 10
+        period: "5m"
+        burst: 5
+        sourcecriterion:
+          ipstrategy:
+            depth: 1
+
+    # AI endpoints (very strict)
+    rate-limit-ai:
+      rateLimit:
+        average: 10
+        period: "1m"
+        burst: 3
+        sourcecriterion:
+          ipstrategy:
+            depth: 1
+
+    # ─────────────────────────────────────────────────────────────────────
+    # COMPRESSION
+    # ─────────────────────────────────────────────────────────────────────
+
+    compression:
+      compress:
+        excludedContentTypes:
+          - "text/event-stream"
+          - "application/octet-stream"
+          - "image/jpeg"
+          - "image/png"
+          - "image/webp"
+
+    # ─────────────────────────────────────────────────────────────────────
+    # ERROR HANDLING (Error Service Integration)
+    # ─────────────────────────────────────────────────────────────────────
+
+    maintenance-errors:
+      errors:
+        status:
+          - "500-599"
+        service: error-service@docker
+        query: "/{status}"
+
+    # ─────────────────────────────────────────────────────────────────────
+    # REDIRECT CHAINS
+    # ─────────────────────────────────────────────────────────────────────
+
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    # ─────────────────────────────────────────────────────────────────────
+    # SECURITY CHAIN (Combined Middleware)
+    # ─────────────────────────────────────────────────────────────────────
+
+    security-chain:
+      chain:
+        middlewares:
+          - security-headers
+          - rate-limit
+          - maintenance-errors
+          - compression
+
+    # For API with stricter rate limiting
+    api-security-chain:
+      chain:
+        middlewares:
+          - security-headers
+          - rate-limit-api
+          - compression
+
+    # For auth endpoints
+    auth-security-chain:
+      chain:
+        middlewares:
+          - security-headers
+          - rate-limit-auth
+          - compression
+
+    # For AI endpoints (payment validation)
+    ai-security-chain:
+      chain:
+        middlewares:
+          - security-headers
+          - rate-limit-ai
+          - compression
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: true
+      cipherSuites:
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+        - TLS_AES_128_GCM_SHA256
+        - TLS_AES_256_GCM_SHA384
+        - TLS_CHACHA20_POLY1305_SHA256
+      curvePreferences:
+        - CurveP521
+        - CurveP384

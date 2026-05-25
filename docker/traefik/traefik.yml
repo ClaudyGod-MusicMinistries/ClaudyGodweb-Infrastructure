@@ -1,0 +1,91 @@
+################################################################################
+#                  TRAEFIK STATIC CONFIGURATION (v3.6)                        #
+#                                                                              #
+# Aligned with shared proxy architecture at ~/apps/proxy                      #
+# This config works alongside the shared Traefik instance                     #
+#                                                                              #
+################################################################################
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+api:
+  dashboard: false
+  insecure: false
+
+ping:
+  entryPoint: traefik
+
+log:
+  level: INFO
+  format: json
+
+accessLog:
+  format: json
+  bufferingSize: 100
+  filters:
+    statusCodes: ["400-599"]
+    retryAttempts: true
+    minDuration: "10ms"
+  fields:
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
+        Referer: keep
+        X-Forwarded-For: keep
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+    transport:
+      respondingTimeouts:
+        readTimeout: "60s"
+        writeTimeout: "60s"
+        idleTimeout: "180s"
+
+  websecure:
+    address: ":443"
+    http:
+      middlewares:
+        - security-chain@file
+      tls:
+        certResolver: letsencrypt
+    transport:
+      respondingTimeouts:
+        readTimeout: "60s"
+        writeTimeout: "60s"
+        idleTimeout: "180s"
+
+  traefik:
+    address: ":8082"
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: traefik-public
+    watch: true
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@claudygod.org
+      storage: /letsencrypt/acme.json
+      keyType: EC256
+      httpChallenge:
+        entryPoint: web
+
+metrics:
+  prometheus:
+    entryPoint: traefik
+    addRoutersLabels: true
