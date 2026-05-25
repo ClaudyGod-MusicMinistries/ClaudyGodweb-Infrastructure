@@ -1,18 +1,39 @@
-.PHONY: help deploy pull logs ps restart down maintenance db-backup db-restore k8s-apply k8s-status k8s-logs-api k8s-rollout clean lint
+.PHONY: help deploy pull logs logs-api logs-web logs-redis logs-traefik ps \
+        restart restart-api restart-web down maintenance maintenance-off \
+        db-backup db-restore db-list db-shell \
+        k8s-apply k8s-status k8s-logs-api k8s-logs-web k8s-rollout k8s-scale-api k8s-port-forward-api k8s-delete \
+        clean clean-all lint env-check version health-check info all status validate
 
-# Default target
 .DEFAULT_GOAL := help
 
-# Project root
+# ─────────────────────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────────────────────
 PROJECT_ROOT := $(CURDIR)
-DOCKER_COMPOSE := docker compose -f $(PROJECT_ROOT)/docker/docker-compose.yml
-DOCKER_COMPOSE_MAINT := docker compose -f $(PROJECT_ROOT)/docker/docker-compose.yml -f $(PROJECT_ROOT)/docker/docker-compose.maintenance.yml
+ENV_FILE     := $(PROJECT_ROOT)/.env
+COMPOSE_FILE := $(PROJECT_ROOT)/docker/docker-compose.yml
+MAINT_FILE   := $(PROJECT_ROOT)/docker/docker-compose.maintenance.yml
 
-# Colors for output
-BLUE := \033[0;34m
-GREEN := \033[0;32m
+# Compose wrappers. --env-file is REQUIRED: .env is at the repo root, compose
+# file is under docker/, so Compose can't find .env on its own.
+DOCKER_COMPOSE := docker compose \
+                  --env-file $(ENV_FILE) \
+                  --project-directory $(PROJECT_ROOT) \
+                  -f $(COMPOSE_FILE)
+
+DOCKER_COMPOSE_MAINT := docker compose \
+                  --env-file $(ENV_FILE) \
+                  --project-directory $(PROJECT_ROOT) \
+                  -f $(COMPOSE_FILE) -f $(MAINT_FILE)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Colors
+# ─────────────────────────────────────────────────────────────────────────────
+BLUE   := \033[0;34m
+GREEN  := \033[0;32m
 YELLOW := \033[1;33m
-NC := \033[0m # No Color
+RED    := \033[0;31m
+NC     := \033[0m
 
 ################################################################################
 #                              HELP                                            #
@@ -25,16 +46,16 @@ help: ## Display this help message
 	@echo "$(BLUE)╚══════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
 	@echo "$(YELLOW)PRODUCTION DEPLOYMENT:$(NC)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^(deploy|pull|logs|ps|restart|down|maintenance)' | sed 's/: .*## /:\t/' | column -t -s '$$' | sed 's/:.*## /\t— /'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^(deploy|pull|logs|ps|restart|down|maintenance)' | awk -F':.*## ' '{printf "  %-22s %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)DATABASE OPERATIONS:$(NC)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^(db-)' | sed 's/: .*## /:\t/' | column -t -s '$$' | sed 's/:.*## /\t— /'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^db-' | awk -F':.*## ' '{printf "  %-22s %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)KUBERNETES (ALTERNATIVE):$(NC)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^(k8s-)' | sed 's/: .*## /:\t/' | column -t -s '$$' | sed 's/:.*## /\t— /'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^k8s-' | awk -F':.*## ' '{printf "  %-22s %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)DEVELOPMENT & MAINTENANCE:$(NC)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^(clean|lint)' | sed 's/: .*## /:\t/' | column -t -s '$$' | sed 's/:.*## /\t— /'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^(clean|lint|env-check|version|health-check|info|validate)' | awk -F':.*## ' '{printf "  %-22s %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(BLUE)Examples:$(NC)"
 	@echo "  make deploy          # Pull latest images and deploy"
@@ -68,14 +89,11 @@ logs-api: ## Follow API service logs
 logs-web: ## Follow web (frontend) service logs
 	$(DOCKER_COMPOSE) logs -f --tail=50 web
 
-logs-db: ## Follow database service logs
-	$(DOCKER_COMPOSE) logs -f --tail=50 db
-
 logs-redis: ## Follow Redis service logs
 	$(DOCKER_COMPOSE) logs -f --tail=50 redis
 
-logs-traefik: ## Follow Traefik reverse proxy logs
-	$(DOCKER_COMPOSE) logs -f --tail=50 traefik
+logs-traefik: ## Follow Traefik logs from the shared proxy
+	docker logs -f --tail=50 shared_traefik
 
 ps: ## Show status of all services
 	@echo "$(BLUE)Service Status:$(NC)"
@@ -85,7 +103,7 @@ ps: ## Show status of all services
 	@docker volume ls | grep claudygod || echo "No volumes found"
 	@echo ""
 	@echo "$(BLUE)Docker Networks:$(NC)"
-	@docker network ls | grep claudygod || echo "No networks found"
+	@docker network ls | grep -E "claudygod|traefik-public" || echo "No networks found"
 
 restart: ## Restart all services
 	@echo "$(BLUE)▶ Restarting services...$(NC)"
@@ -107,15 +125,14 @@ down: ## Stop and remove all containers (keeps volumes)
 #                         MAINTENANCE MODE                                     #
 ################################################################################
 
-maintenance: ## Enable maintenance mode (503 Service Unavailable)
+maintenance: ## Enable maintenance mode (503 via shared error-service)
 	@echo "$(YELLOW)⚠ Enabling maintenance mode...$(NC)"
 	$(DOCKER_COMPOSE_MAINT) up -d
-	@echo "$(YELLOW)Maintenance mode enabled.$(NC)"
-	@echo "To disable: make deploy"
+	@echo "$(YELLOW)Maintenance mode enabled. Disable with: make maintenance-off$(NC)"
 
-maintenance-off: ## Disable maintenance mode and redeploy services
+maintenance-off: ## Disable maintenance mode and bring stack back live
 	@echo "$(BLUE)▶ Disabling maintenance mode...$(NC)"
-	$(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE) up -d --remove-orphans
 	@echo "$(GREEN)✓ Services live again!$(NC)"
 
 ################################################################################
@@ -132,11 +149,12 @@ db-restore: ## Restore PostgreSQL database from backup (interactive)
 
 db-list: ## List all available database backups
 	@echo "$(BLUE)Available backups:$(NC)"
-	@ls -lht $(PROJECT_ROOT)/backups/*.sql.gz 2>/dev/null | awk '{print $$9, "(" $$5 ")"}'
+	@ls -lht $(PROJECT_ROOT)/backups/*.sql.gz 2>/dev/null | awk '{print $$9, "(" $$5 ")"}' || echo "No backups found."
 
-db-shell: ## Open interactive PostgreSQL shell
-	@echo "$(BLUE)▶ Connecting to PostgreSQL...$(NC)"
-	docker exec -it claudygod_db psql -U $$(grep POSTGRES_USER $(PROJECT_ROOT)/.env | cut -d= -f2)
+db-shell: ## Open interactive psql shell to Supabase
+	@echo "$(BLUE)▶ Connecting to Supabase Postgres...$(NC)"
+	@set -a; . $(ENV_FILE); set +a; \
+	docker run --rm -it postgres:16-alpine psql "$$SUPABASE_CONNECTION_STRING"
 
 ################################################################################
 #                      KUBERNETES OPERATIONS                                   #
@@ -181,17 +199,16 @@ k8s-delete: ## Delete all Kubernetes resources in claudygod namespace (DESTRUCTI
 #                    DEVELOPMENT & MAINTENANCE                                 #
 ################################################################################
 
-clean: ## Remove stopped containers, dangling images, and old logs
+clean: ## Remove stopped containers and dangling images
 	@echo "$(YELLOW)▶ Cleaning up Docker artifacts...$(NC)"
 	docker system prune -f
 	@echo "$(GREEN)✓ Cleanup complete!$(NC)"
 
 clean-all: ## DESTRUCTIVE: Remove all claudygod containers, images, and volumes
-	@echo "$(RED)⚠ WARNING: This will delete all ClaudyGod containers, images, and volumes!$(NC)"
-	@echo "This action cannot be undone. Press Ctrl+C to cancel."
+	@echo "$(RED)⚠ This will delete ALL ClaudyGod containers, images, and volumes!$(NC)"
+	@echo "Press Ctrl+C to cancel..."
 	@sleep 3
-	@echo "$(RED)Proceeding with full cleanup...$(NC)"
-	docker compose -f $(DOCKER_COMPOSE) down -v
+	$(DOCKER_COMPOSE) down -v --remove-orphans
 	docker system prune -af --volumes
 	@echo "$(GREEN)✓ Full cleanup complete!$(NC)"
 
@@ -200,64 +217,71 @@ lint: ## Validate docker-compose.yml syntax
 	$(DOCKER_COMPOSE) config > /dev/null
 	@echo "$(GREEN)✓ Configuration is valid!$(NC)"
 
-env-check: ## Verify .env file has all required variables
+env-check: ## Verify .env file has all required variables filled in
 	@echo "$(BLUE)▶ Checking environment variables...$(NC)"
-	@bash -c 'source $(PROJECT_ROOT)/.env 2>/dev/null; \
-		for var in DOMAIN API_DOMAIN TAG POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD JWT_KEY ENCRYPTION_KEY EMAIL_SMTP_HOST; do \
-			if [ -z "$${!var}" ]; then \
-				echo "$(YELLOW)✗ Missing: $$var$(NC)"; \
-			else \
-				echo "$(GREEN)✓ $$var$(NC)"; \
-			fi; \
-		done'
+	@set -a; . $(ENV_FILE); set +a; \
+	missing=0; \
+	for var in DOMAIN API_DOMAIN TAG REGISTRY BACKEND_IMAGE FRONTEND_IMAGE \
+	           SUPABASE_CONNECTION_STRING REDIS_PASSWORD JWT_KEY ENCRYPTION_KEY \
+	           EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD \
+	           EMAIL_FROM_ADDRESS PAYSTACK_SECRET_KEY \
+	           NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ANTHROPIC_API_KEY CLAUDE_MODEL; do \
+	  val=$$(eval echo "\$$$$var"); \
+	  if [ -z "$$val" ] || echo "$$val" | grep -q "CHANGE_ME"; then \
+	    printf "  $(RED)✗ Missing or placeholder:$(NC) %s\n" "$$var"; missing=1; \
+	  else \
+	    printf "  $(GREEN)✓$(NC) %s\n" "$$var"; \
+	  fi; \
+	done; \
+	exit $$missing
 
 version: ## Show versions of key components
 	@echo "$(BLUE)Component Versions:$(NC)"
 	@echo "  Docker:          $$(docker --version)"
 	@echo "  Docker Compose:  $$(docker compose version)"
-	@echo "  Traefik:         v3.3"
-	@echo "  PostgreSQL:      16-alpine"
+	@echo "  Traefik:         v3.6 (shared proxy)"
+	@echo "  PostgreSQL:      Supabase (managed)"
 	@echo "  Redis:           7-alpine"
 	@echo "  .NET:            8.0"
 	@echo "  Next.js:         14+"
 
-health-check: ## Check health of all services
+health-check: ## Check health of all public endpoints
 	@echo "$(BLUE)▶ Performing health checks...$(NC)"
-	@bash -c 'source $(PROJECT_ROOT)/.env; \
-		echo "API Health: $$(curl -s -o /dev/null -w "%{http_code}" https://$${API_DOMAIN}/healthz 2>/dev/null || echo "000")"; \
-		echo "Web Health: $$(curl -s -o /dev/null -w "%{http_code}" https://$${DOMAIN}/ 2>/dev/null || echo "000")"'
+	@set -a; . $(ENV_FILE); set +a; \
+	for url in "https://$$DOMAIN/" "https://$$API_DOMAIN/healthz"; do \
+	  code=$$(curl -sSo /dev/null -w "%{http_code}" "$$url" || echo "000"); \
+	  if echo "$$code" | grep -qE '^2'; then \
+	    printf "  $(GREEN)✓$(NC) %s → %s\n" "$$url" "$$code"; \
+	  else \
+	    printf "  $(RED)✗$(NC) %s → %s\n" "$$url" "$$code"; \
+	  fi; \
+	done
 
 info: ## Display deployment information
-	@echo "$(BLUE)╔═══════════════════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)╔════════════════════════════════════════════════════════╗$(NC)"
 	@echo "$(BLUE)║         ClaudyGod Infrastructure Deployment            ║$(NC)"
-	@echo "$(BLUE)╚═══════════════════════════════════════════════════════╝$(NC)"
+	@echo "$(BLUE)╚════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
-	@bash -c 'source $(PROJECT_ROOT)/.env 2>/dev/null; \
-		echo "$(YELLOW)Configuration:$(NC)"; \
-		echo "  Frontend:        https://$${DOMAIN}"; \
-		echo "  API:             https://$${API_DOMAIN}"; \
-		echo "  Tag:             $${TAG}"; \
-		echo "  Database:        $${POSTGRES_DB}"; \
-		echo "  Redis:           Enabled"; \
-		echo ""' \
-		echo "$(YELLOW)Services:$(NC)"; \
-		echo "  Traefik:         Reverse proxy + TLS"; \
-		echo "  PostgreSQL:      16-alpine (primary DB)"; \
-		echo "  Redis:           7-alpine (cache)"; \
-		echo "  API:             .NET 8 (Clean Architecture)"; \
-		echo "  Web:             Next.js 14+ (frontend)"; \
-		echo ""
+	@set -a; . $(ENV_FILE); set +a; \
+	echo "$(YELLOW)Configuration:$(NC)"; \
+	echo "  Frontend:        https://$$DOMAIN"; \
+	echo "  API:             https://$$API_DOMAIN"; \
+	echo "  Grafana:         https://$$GRAFANA_DOMAIN"; \
+	echo "  Backend image:   $$BACKEND_IMAGE"; \
+	echo "  Frontend image:  $$FRONTEND_IMAGE"; \
+	echo ""; \
+	echo "$(YELLOW)Services:$(NC)"; \
+	echo "  Shared proxy:    Traefik v3.6 (~/apps/proxy)"; \
+	echo "  Database:        Supabase Postgres (managed)"; \
+	echo "  Email:           Brevo SMTP relay"; \
+	echo "  Redis:           Local (claudygod_redis)"; \
+	echo ""
 
 ################################################################################
 #                            UTILITY TARGETS                                   #
 ################################################################################
 
-.PHONY: all
 all: deploy ## Alias for deploy
-
-.PHONY: status
 status: ps ## Alias for ps
-
-.PHONY: validate
 validate: lint env-check ## Validate config and environment
 	@echo "$(GREEN)✓ All validations passed!$(NC)"
