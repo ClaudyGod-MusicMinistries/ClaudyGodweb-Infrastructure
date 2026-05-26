@@ -79,9 +79,11 @@ services:
     restart: "no"
     pull_policy: always
 
-    networks:
-      - claudygod-internal
-      - traefik-public
+    # Use host network so the container inherits the host's DNS and routing.
+    # This bypasses Docker's embedded DNS (which cannot forward to upstream
+    # resolvers in this environment) and lets the container reach Supabase
+    # directly, exactly as the host can.
+    network_mode: "host"
 
     environment:
       TZ: ${TZ:-UTC}
@@ -89,10 +91,6 @@ services:
       ConnectionStrings__DefaultConnection: ${SUPABASE_CONNECTION_STRING:?SUPABASE_CONNECTION_STRING is required}
 
     entrypoint: ["dotnet", "ClaudyGod.API.dll", "--migrate"]
-
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
 
     # migrate only needs Supabase (external) — no local service dependency needed
     deploy:
