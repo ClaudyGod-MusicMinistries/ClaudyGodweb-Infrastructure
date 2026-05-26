@@ -90,6 +90,10 @@ services:
 
     entrypoint: ["dotnet", "ClaudyGod.API.dll", "--migrate"]
 
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
     # migrate only needs Supabase (external) — no local service dependency needed
     deploy:
       resources:
