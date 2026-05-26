@@ -21,8 +21,6 @@ backups/
 dumps/
 *.sql
 *.sql.gz
-.md
-
 
 # Container artifacts
 .dockerignore
@@ -51,10 +49,6 @@ Thumbs.db
 tmp/
 temp/
 .tmp/
-
-MANAGED_SERVICES_GUIDE.md
-DEPLOYMENT_GUIDE.md
-README.md
 
 # Node package manager lock files (optional for stability)
 # Uncomment if you want consistency across installs
