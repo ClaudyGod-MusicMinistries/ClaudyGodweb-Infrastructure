@@ -41,7 +41,9 @@ success ".env file found"
 
 command -v docker &>/dev/null || die "Docker not installed."
 docker info &>/dev/null       || die "Docker daemon not running."
-success "Docker is running"
+# Verify Docker Compose v2 plugin (not legacy docker-compose v1)
+docker compose version &>/dev/null || die "Docker Compose v2 plugin not found. Run: apt install docker-compose-plugin"
+success "Docker + Compose v2 are running"
 
 # Ensure traefik-public network exists (shared proxy requires it)
 if ! docker network ls --format '{{.Name}}' | grep -q '^traefik-public$'; then
