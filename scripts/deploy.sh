@@ -1,248 +1,152 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
 ################################################################################
 #                      CLAUDYGOD DEPLOYMENT SCRIPT                             #
 #                                                                              #
-# This script handles production deployment:                                  #
-# 1. Pre-flight checks (.env, Docker, network)                               #
-# 2. Pull latest images from GHCR                                             #
-# 3. Run database migrations                                                  #
-# 4. Deploy updated services                                                  #
-# 5. Perform health checks                                                    #
-# 6. Print deployment summary                                                 #
-#                                                                              #
 # Usage:                                                                       #
-#   $ ./scripts/deploy.sh                                                     #
-#   $ TAG=v1.0.0 ./scripts/deploy.sh  # Deploy specific version               #
+#   ./scripts/deploy.sh              # deploy all services (latest)           #
+#   TAG=sha-abc123 ./scripts/deploy.sh  # deploy a pinned tag                 #
+#   ./scripts/deploy.sh --api-only   # restart API + migrations only          #
+#   ./scripts/deploy.sh --web-only   # restart web frontend only              #
 #                                                                              #
 ################################################################################
 
 set -euo pipefail
 
-# Colors for terminal output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Configuration
+# ── Paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DOCKER_DIR="$PROJECT_ROOT/docker"
 ENV_FILE="$PROJECT_ROOT/.env"
+COMPOSE="docker compose --env-file $ENV_FILE --project-directory $PROJECT_ROOT -f $DOCKER_DIR/docker-compose.yml"
 
-# Default tag (can be overridden by environment variable)
-TAG="${TAG:-latest}"
+# ── Colours ───────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+info()    { echo -e "${BLUE}→${NC}  $*"; }
+success() { echo -e "${GREEN}✓${NC}  $*"; }
+warn()    { echo -e "${YELLOW}⚠${NC}  $*"; }
+die()     { echo -e "${RED}✗${NC}  $*" >&2; exit 1; }
+section() { echo -e "\n${BLUE}━━━ $* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"; }
 
-################################################################################
-#                          UTILITY FUNCTIONS                                   #
-################################################################################
+# ── Args ──────────────────────────────────────────────────────────────────────
+export TAG="${TAG:-latest}"
+MODE="all"
+[[ "${1:-}" == "--api-only" ]] && MODE="api"
+[[ "${1:-}" == "--web-only" ]] && MODE="web"
 
-log_info() {
-    echo -e "${BLUE}ℹ${NC} $*"
-}
+# ────────────────────────────────────────────────────────────────────────────
+section "PRE-FLIGHT CHECKS"
 
-log_success() {
-    echo -e "${GREEN}✓${NC} $*"
-}
+[[ -f "$ENV_FILE" ]] || die ".env not found. Run: cp .env.example .env && fill in values."
+success ".env file found"
 
-log_warning() {
-    echo -e "${YELLOW}⚠${NC} $*"
-}
+command -v docker &>/dev/null || die "Docker not installed."
+docker info &>/dev/null       || die "Docker daemon not running."
+success "Docker is running"
 
-log_error() {
-    echo -e "${RED}✗${NC} $*"
-    exit 1
-}
-
-log_section() {
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}${1}${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-}
-
-check_file_exists() {
-    if [[ ! -f "$1" ]]; then
-        log_error "File not found: $1"
-    fi
-}
-
-check_command_exists() {
-    if ! command -v "$1" &> /dev/null; then
-        log_error "Command not found: $1. Please install it and try again."
-    fi
-}
-
-################################################################################
-#                       PRE-FLIGHT CHECKS                                     #
-################################################################################
-
-log_section "PRE-FLIGHT CHECKS"
-
-log_info "Checking prerequisites..."
-
-# Check if .env exists
-if [[ ! -f "$ENV_FILE" ]]; then
-    log_error ".env file not found at $ENV_FILE"
+# Ensure traefik-public network exists (shared proxy requires it)
+if ! docker network ls --format '{{.Name}}' | grep -q '^traefik-public$'; then
+  warn "traefik-public network missing — creating..."
+  docker network create traefik-public
 fi
-log_success "✓ .env file exists"
+success "traefik-public network exists"
 
-# Check if required commands exist
-for cmd in docker docker-compose curl; do
-    check_command_exists "$cmd"
-done
-log_success "✓ All required commands found (docker, docker-compose, curl)"
-
-# Check if Docker daemon is running
-if ! docker info > /dev/null 2>&1; then
-    log_error "Docker daemon is not running. Please start Docker and try again."
-fi
-log_success "✓ Docker daemon is running"
-
-# Check if traefik-public network exists
-if ! docker network ls | grep -q "traefik-public"; then
-    log_warning "traefik-public network not found. Creating it..."
-    docker network create traefik-public || log_error "Failed to create traefik-public network"
-    log_success "✓ traefik-public network created"
-else
-    log_success "✓ traefik-public network exists"
-fi
-
-# Check if docker-compose files exist
-check_file_exists "$DOCKER_DIR/docker-compose.yml"
-check_file_exists "$DOCKER_DIR/traefik/traefik.yml"
-check_file_exists "$DOCKER_DIR/traefik/dynamic.yml"
-log_success "✓ All Docker Compose configuration files found"
-
-# Source .env to validate required variables
-# shellcheck source=/dev/null
+# Validate required env vars (matches this infra's Supabase architecture)
 source "$ENV_FILE"
-
 REQUIRED_VARS=(
-    "DOMAIN"
-    "API_DOMAIN"
-    "ACME_EMAIL"
-    "TAG"
-    "POSTGRES_DB"
-    "POSTGRES_USER"
-    "POSTGRES_PASSWORD"
-    "REDIS_PASSWORD"
-    "JWT_KEY"
-    "ENCRYPTION_KEY"
-    "EMAIL_SMTP_HOST"
-    "EMAIL_SMTP_USERNAME"
-    "PAYSTACK_SECRET_KEY"
-    "ANTHROPIC_API_KEY"
+  DOMAIN API_DOMAIN
+  BACKEND_IMAGE FRONTEND_IMAGE
+  SUPABASE_CONNECTION_STRING
+  REDIS_PASSWORD
+  JWT_KEY ENCRYPTION_KEY
+  EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD
+  PAYSTACK_SECRET_KEY NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY
+  ANTHROPIC_API_KEY
+  GRAFANA_ADMIN_PASSWORD
 )
 
-log_info "Validating .env variables..."
+info "Validating environment variables..."
+missing=0
 for var in "${REQUIRED_VARS[@]}"; do
-    if [[ -z "${!var:-}" ]]; then
-        log_error "Required environment variable not set: $var"
-    fi
+  val="${!var:-}"
+  if [[ -z "$val" || "$val" == *CHANGE_ME* ]]; then
+    echo -e "  ${RED}✗${NC} $var is missing or still set to CHANGE_ME"
+    missing=1
+  else
+    echo -e "  ${GREEN}✓${NC} $var"
+  fi
 done
-log_success "✓ All required environment variables are set"
+[[ $missing -eq 0 ]] || die "Fix the missing variables above before deploying."
+success "All required variables set"
 
-################################################################################
-#                         PULL LATEST IMAGES                                  #
-################################################################################
+# ────────────────────────────────────────────────────────────────────────────
+section "PULLING IMAGES FROM GHCR (TAG=$TAG)"
 
-log_section "PULLING LATEST IMAGES FROM GHCR"
+case "$MODE" in
+  api)  $COMPOSE pull api migrate ;;
+  web)  $COMPOSE pull web ;;
+  *)    $COMPOSE pull api migrate web ;;
+esac
+success "Images pulled"
 
-cd "$PROJECT_ROOT"
-
-log_info "Pulling latest images (TAG=$TAG)..."
-if ! docker compose -f "$DOCKER_DIR/docker-compose.yml" pull; then
-    log_error "Failed to pull images from GHCR. Check your internet connection and GHCR credentials."
-fi
-log_success "✓ Images pulled successfully"
-
-################################################################################
-#                        RUN MIGRATIONS                                        #
-################################################################################
-
-log_section "DATABASE MIGRATIONS"
-
-log_info "Running EF Core database migrations..."
-
-# Run migrations with timeout
-if docker compose -f "$DOCKER_DIR/docker-compose.yml" run --rm migrate; then
-    log_success "✓ Database migrations completed"
-else
-    log_error "Database migrations failed. Check the logs above for details."
+# ────────────────────────────────────────────────────────────────────────────
+if [[ "$MODE" != "web" ]]; then
+  section "DATABASE MIGRATIONS"
+  $COMPOSE run --rm migrate || die "Migrations failed — aborting deploy."
+  success "Migrations applied"
 fi
 
-################################################################################
-#                      DEPLOY SERVICES                                         #
-################################################################################
+# ────────────────────────────────────────────────────────────────────────────
+section "DEPLOYING SERVICES"
 
-log_section "DEPLOYING SERVICES"
+case "$MODE" in
+  api)
+    $COMPOSE up -d --no-deps --remove-orphans api
+    ;;
+  web)
+    $COMPOSE up -d --no-deps --remove-orphans web
+    ;;
+  *)
+    $COMPOSE up -d --no-deps --remove-orphans redis api web
+    ;;
+esac
+success "Services started"
 
-log_info "Updating services with latest images..."
+# ────────────────────────────────────────────────────────────────────────────
+section "HEALTH CHECKS"
 
-if ! docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --remove-orphans; then
-    log_error "Failed to deploy services. Check docker-compose logs."
-fi
+TIMEOUT=120; ELAPSED=0; INTERVAL=5
+info "Waiting up to ${TIMEOUT}s for services to be healthy..."
 
-log_success "✓ Services deployed"
+while [[ $ELAPSED -lt $TIMEOUT ]]; do
+  API_CODE=$(curl -sSo /dev/null -w "%{http_code}" "https://${API_DOMAIN}/healthz" 2>/dev/null || echo "000")
+  WEB_CODE=$(curl -sSo /dev/null -w "%{http_code}" "https://${DOMAIN}/"        2>/dev/null || echo "000")
 
-################################################################################
-#                         HEALTH CHECKS                                        #
-################################################################################
-
-log_section "HEALTH CHECKS"
-
-# Wait for services to be ready
-log_info "Waiting for services to be healthy (timeout: 120s)..."
-
-HEALTH_CHECK_TIMEOUT=120
-HEALTH_CHECK_INTERVAL=3
-ELAPSED=0
-
-while [[ $ELAPSED -lt $HEALTH_CHECK_TIMEOUT ]]; do
-    API_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "https://${API_DOMAIN}/healthz" 2>/dev/null || echo "000")
-    WEB_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "https://${DOMAIN}/" 2>/dev/null || echo "000")
-
-    if [[ "$API_HEALTH" == "200" && "$WEB_HEALTH" == "200" ]]; then
-        log_success "✓ All services are healthy"
-        break
-    fi
-
-    log_info "  Waiting... (API: $API_HEALTH, Web: $WEB_HEALTH)"
-    sleep $HEALTH_CHECK_INTERVAL
-    ELAPSED=$((ELAPSED + HEALTH_CHECK_INTERVAL))
+  if [[ "$API_CODE" == "200" && "$WEB_CODE" =~ ^(200|301|302)$ ]]; then
+    success "All services healthy"
+    break
+  fi
+  printf "  Waiting... (API: %s, Web: %s) [%ds]\n" "$API_CODE" "$WEB_CODE" "$ELAPSED"
+  sleep $INTERVAL; ELAPSED=$((ELAPSED + INTERVAL))
 done
 
-if [[ $ELAPSED -ge $HEALTH_CHECK_TIMEOUT ]]; then
-    log_warning "Health check timed out after ${HEALTH_CHECK_TIMEOUT}s. Services may still be starting."
-    log_info "Run 'docker compose logs' to check service status."
-fi
+[[ $ELAPSED -ge $TIMEOUT ]] && warn "Health check timed out — check logs: make logs"
 
-################################################################################
-#                      DEPLOYMENT SUMMARY                                     #
-################################################################################
+# Prune old images to free disk
+docker image prune -f --filter "until=24h" >/dev/null
 
-log_section "DEPLOYMENT SUMMARY"
+# ────────────────────────────────────────────────────────────────────────────
+section "DEPLOYMENT SUMMARY"
 
-log_success "ClaudyGod infrastructure deployed successfully!"
-log_info ""
-log_info "📋 Deployment Details:"
-log_info "  • Frontend:  https://${DOMAIN}"
-log_info "  • API:       https://${API_DOMAIN}/api/v1/swagger"
-log_info "  • Health:    https://${API_DOMAIN}/healthz"
-log_info ""
-log_info "🔧 Useful Commands:"
-log_info "  • View logs:       docker compose logs -f"
-log_info "  • Check status:    docker compose ps"
-log_info "  • Restart service: docker compose restart <service>"
-log_info "  • Stop all:        docker compose down"
-log_info ""
-log_info "📚 Documentation:"
-log_info "  • Read the README.md for more information"
-log_info "  • Check the plan at /root/.claude/plans/so-this-remote-v-linear-aurora.md"
-log_info ""
-
-log_success "✨ Deployment complete! Your site is live."
+success "ClaudyGod deployed successfully!"
+echo ""
+echo -e "  ${YELLOW}Frontend:${NC}  https://${DOMAIN}"
+echo -e "  ${YELLOW}API:${NC}       https://${API_DOMAIN}/healthz"
+echo -e "  ${YELLOW}Grafana:${NC}   https://${GRAFANA_DOMAIN:-metrics.claudygod.org}"
+echo ""
+echo -e "  ${BLUE}make logs${NC}         — follow all logs"
+echo -e "  ${BLUE}make ps${NC}           — show service status"
+echo -e "  ${BLUE}make health-check${NC}  — re-run health checks"
+echo ""
+$COMPOSE ps
+echo ""
+success "Done — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
