@@ -153,7 +153,7 @@ db-list: ## List all available database backups
 
 db-shell: ## Open interactive psql shell to Supabase
 	@echo "$(BLUE)▶ Connecting to Supabase Postgres...$(NC)"
-	@set -a; . $(ENV_FILE); set +a; \
+	@export $$(grep -v '^#' $(ENV_FILE) | grep -v '^\s*$$' | xargs); \
 	docker run --rm -it postgres:16-alpine psql "$$SUPABASE_CONNECTION_STRING"
 
 ################################################################################
@@ -219,7 +219,7 @@ lint: ## Validate docker-compose.yml syntax
 
 env-check: ## Verify .env file has all required variables filled in
 	@echo "$(BLUE)▶ Checking environment variables...$(NC)"
-	@set -a; . $(ENV_FILE); set +a; \
+	@export $$(grep -v '^#' $(ENV_FILE) | grep -v '^\s*$$' | xargs); \
 	missing=0; \
 	for var in DOMAIN API_DOMAIN TAG REGISTRY BACKEND_IMAGE FRONTEND_IMAGE \
 	           SUPABASE_CONNECTION_STRING REDIS_PASSWORD JWT_KEY ENCRYPTION_KEY \
@@ -247,7 +247,7 @@ version: ## Show versions of key components
 
 health-check: ## Check health of all public endpoints
 	@echo "$(BLUE)▶ Performing health checks...$(NC)"
-	@set -a; . $(ENV_FILE); set +a; \
+	@export $$(grep -v '^#' $(ENV_FILE) | grep -v '^\s*$$' | xargs); \
 	for url in "https://$$DOMAIN/" "https://$$API_DOMAIN/healthz"; do \
 	  code=$$(curl -sSo /dev/null -w "%{http_code}" "$$url" || echo "000"); \
 	  if echo "$$code" | grep -qE '^2'; then \
@@ -262,7 +262,7 @@ info: ## Display deployment information
 	@echo "$(BLUE)║         ClaudyGod Infrastructure Deployment            ║$(NC)"
 	@echo "$(BLUE)╚════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
-	@set -a; . $(ENV_FILE); set +a; \
+	@export $$(grep -v '^#' $(ENV_FILE) | grep -v '^\s*$$' | xargs); \
 	echo "$(YELLOW)Configuration:$(NC)"; \
 	echo "  Frontend:        https://$$DOMAIN"; \
 	echo "  API:             https://$$API_DOMAIN"; \
