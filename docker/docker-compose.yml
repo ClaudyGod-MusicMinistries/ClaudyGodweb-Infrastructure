@@ -193,8 +193,8 @@ services:
       start_period: 60s
 
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      # Migrations now run in CI (GitHub Actions runner has direct Supabase access).
+      # The migrate service still exists in this file for manual/emergency use only.
       redis:
         condition: service_healthy
 
