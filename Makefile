@@ -2,7 +2,8 @@
         restart restart-api restart-web down maintenance maintenance-off \
         db-backup db-restore db-list db-shell \
         k8s-apply k8s-status k8s-logs-api k8s-logs-web k8s-rollout k8s-scale-api k8s-port-forward-api k8s-delete \
-        clean clean-all lint env-check version health-check info all status validate
+        clean clean-all lint env-check version health-check info all status validate \
+        rebuild rebuild-clean rebuild-images rebuild-deploy
 
 .DEFAULT_GOAL := help
 
