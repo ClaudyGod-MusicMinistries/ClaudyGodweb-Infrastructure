@@ -79,20 +79,20 @@ jobs:
 
             case "$SERVICE" in
               api)
-                docker compose pull api migrate
-                docker compose up --no-deps --remove-orphans -d migrate
-                docker compose wait migrate || { echo "✗ Migration failed"; exit 1; }
-                docker compose up --no-deps --remove-orphans -d api
+                docker compose -f docker/docker-compose.yml pull api migrate
+                docker compose -f docker/docker-compose.yml up --no-deps --remove-orphans -d migrate
+                docker compose -f docker/docker-compose.yml wait migrate || { echo "✗ Migration failed"; exit 1; }
+                docker compose -f docker/docker-compose.yml up --no-deps --remove-orphans -d api
                 ;;
               web)
-                docker compose pull web
-                docker compose up --no-deps --remove-orphans -d web
+                docker compose -f docker/docker-compose.yml pull web
+                docker compose -f docker/docker-compose.yml up --no-deps --remove-orphans -d web
                 ;;
               *)
-                docker compose pull api migrate web
-                docker compose up --no-deps --remove-orphans -d migrate
-                docker compose wait migrate || { echo "✗ Migration failed"; exit 1; }
-                docker compose up --no-deps --remove-orphans -d api web
+                docker compose -f docker/docker-compose.yml pull api migrate web
+                docker compose -f docker/docker-compose.yml up --no-deps --remove-orphans -d migrate
+                docker compose -f docker/docker-compose.yml wait migrate || { echo "✗ Migration failed"; exit 1; }
+                docker compose -f docker/docker-compose.yml up --no-deps --remove-orphans -d api web
                 ;;
             esac
 
@@ -100,4 +100,4 @@ jobs:
             docker image prune -f --filter "until=24h" >/dev/null
 
             echo "✓ Deploy complete — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            docker compose ps
+            docker compose -f docker/docker-compose.yml ps
