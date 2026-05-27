@@ -70,6 +70,11 @@ jobs:
             set -euo pipefail
             cd "$DEPLOY_PATH"
 
+            # Load environment variables from .env
+            set -a
+            source .env
+            set +a
+
             echo "→ Authenticating with GHCR..."
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
