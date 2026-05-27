@@ -163,13 +163,13 @@ services:
       EmailSettings__AdminEmail: ${EMAIL_ADMIN}
       EmailSettings__UseTls: "true"
 
-      # Paystack
-      PaystackSettings__SecretKey: ${PAYSTACK_SECRET_KEY}
-      PaystackSettings__PublicKey: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY}
+      # Paystack (optional — set when payment gateway is ready)
+      PaystackSettings__SecretKey: ${PAYSTACK_SECRET_KEY:-}
+      PaystackSettings__PublicKey: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY:-}
 
-      # Anthropic Claude
-      AnthropicSettings__ApiKey: ${ANTHROPIC_API_KEY}
-      AnthropicSettings__Model: ${CLAUDE_MODEL}
+      # Anthropic Claude (optional — set when payment validation is enabled)
+      AnthropicSettings__ApiKey: ${ANTHROPIC_API_KEY:-}
+      AnthropicSettings__Model: ${CLAUDE_MODEL:-claude-sonnet-4-6}
 
       # CORS
       CorsOrigins: "https://${DOMAIN},https://www.${DOMAIN},https://${API_DOMAIN}"

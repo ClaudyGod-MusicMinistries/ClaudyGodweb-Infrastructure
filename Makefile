@@ -224,11 +224,20 @@ env-check: ## Verify .env file has all required variables filled in
 	for var in DOMAIN API_DOMAIN TAG REGISTRY BACKEND_IMAGE FRONTEND_IMAGE \
 	           SUPABASE_CONNECTION_STRING REDIS_PASSWORD JWT_KEY ENCRYPTION_KEY \
 	           EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD \
-	           EMAIL_FROM_ADDRESS PAYSTACK_SECRET_KEY \
-	           NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ANTHROPIC_API_KEY CLAUDE_MODEL; do \
+	           EMAIL_FROM_ADDRESS CLAUDE_MODEL; do \
 	  val=$$(eval echo "\$$$$var"); \
 	  if [ -z "$$val" ] || echo "$$val" | grep -q "CHANGE_ME"; then \
 	    printf "  $(RED)✗ Missing or placeholder:$(NC) %s\n" "$$var"; missing=1; \
+	  else \
+	    printf "  $(GREEN)✓$(NC) %s\n" "$$var"; \
+	  fi; \
+	done; \
+	echo ""; \
+	echo "$(YELLOW)Optional (set when ready):$(NC)"; \
+	for var in PAYSTACK_SECRET_KEY NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ANTHROPIC_API_KEY; do \
+	  val=$$(eval echo "\$$$$var"); \
+	  if [ -z "$$val" ] || echo "$$val" | grep -q "CHANGE_ME"; then \
+	    printf "  $(YELLOW)⊘$(NC) %s (not yet configured)\n" "$$var"; \
 	  else \
 	    printf "  $(GREEN)✓$(NC) %s\n" "$$var"; \
 	  fi; \
