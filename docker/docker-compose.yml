@@ -86,11 +86,8 @@ services:
     environment:
       TZ: ${TZ:-UTC}
       ASPNETCORE_ENVIRONMENT: Production
-      # MIGRATE_CONNECTION_STRING must disable connection pooling (Pooling=false)
-      # and use a longer Timeout so EF Core DDL commands complete reliably.
-      # The Session Pooler (port 5432) works fine for migrations; the Transaction
-      # Pooler (port 6543) does NOT — never use that for EF Core.
-      ConnectionStrings__DefaultConnection: ${MIGRATE_CONNECTION_STRING:?MIGRATE_CONNECTION_STRING is required}
+      # Use Supabase connection string for migrations
+      ConnectionStrings__DefaultConnection: ${SUPABASE_CONNECTION_STRING:?SUPABASE_CONNECTION_STRING is required}
 
     entrypoint: ["dotnet", "ClaudyGod.API.dll", "--migrate"]
 
