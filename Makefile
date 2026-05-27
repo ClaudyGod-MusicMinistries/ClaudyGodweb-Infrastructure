@@ -295,3 +295,35 @@ all: deploy ## Alias for deploy
 status: ps ## Alias for ps
 validate: lint env-check ## Validate config and environment
 	@echo "$(GREEN)✓ All validations passed!$(NC)"
+
+################################################################################
+#                        REBUILD & CLEAN TARGETS                               #
+################################################################################
+
+rebuild: rebuild-clean rebuild-images rebuild-deploy ## Complete rebuild from scratch
+
+rebuild-clean: ## Remove containers & images (preserves volumes & Let's Encrypt)
+	@echo "$(BLUE)▶ Cleaning old containers and images...$(NC)"
+	$(DOCKER_COMPOSE) down --remove-orphans
+	@docker rmi ghcr.io/claudygod-musicministries/cgm-api:latest 2>/dev/null || true
+	@docker rmi ghcr.io/claudygod-musicministries/cgm-web:latest 2>/dev/null || true
+	@echo "$(GREEN)✓ Clean complete (Let's Encrypt preserved)$(NC)"
+
+rebuild-images: ## Pull fresh images from GHCR
+	@echo "$(BLUE)▶ Pulling fresh images from GHCR...$(NC)"
+	$(DOCKER_COMPOSE) pull
+	@echo "$(GREEN)✓ Images pulled$(NC)"
+
+rebuild-deploy: env-check ## Deploy fresh infrastructure
+	@echo "$(BLUE)▶ Running database migrations...$(NC)"
+	$(DOCKER_COMPOSE) run --rm migrate
+	@echo "$(BLUE)▶ Starting all services...$(NC)"
+	$(DOCKER_COMPOSE) up -d --remove-orphans
+	@echo "$(GREEN)✓ Deployment complete$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Waiting for services to stabilize...$(NC)"
+	@sleep 20
+	@echo ""
+	@$(MAKE) ps
+	@echo ""
+	@echo "$(YELLOW)Run 'make health-check' to verify endpoints$(NC)"
