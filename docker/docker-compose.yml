@@ -163,13 +163,13 @@ services:
       EmailSettings__AdminEmail: ${EMAIL_ADMIN}
       EmailSettings__UseTls: "true"
 
-      # Paystack
-      PaystackSettings__SecretKey: ${PAYSTACK_SECRET_KEY}
-      PaystackSettings__PublicKey: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY}
+      # Paystack (optional — set when payment gateway is ready)
+      PaystackSettings__SecretKey: ${PAYSTACK_SECRET_KEY:-}
+      PaystackSettings__PublicKey: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY:-}
 
-      # AIProvider AI
-      AIProviderSettings__ApiKey: ${AI_PROVIDER_API_KEY}
-      AIProviderSettings__Model: ${AI_MODEL}
+      # AIProvider AI (optional — set when payment validation is enabled)
+      AIProviderSettings__ApiKey: ${AI_PROVIDER_API_KEY:-}
+      AIProviderSettings__Model: ${AI_MODEL:-ai-sonnet-4-6}
 
       # CORS
       CorsOrigins: "https://${DOMAIN},https://www.${DOMAIN},https://${API_DOMAIN}"
