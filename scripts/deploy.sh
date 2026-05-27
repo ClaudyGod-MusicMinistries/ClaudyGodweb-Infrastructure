@@ -135,7 +135,7 @@ TIMEOUT=120; ELAPSED=0; INTERVAL=5
 info "Waiting up to ${TIMEOUT}s for services to be healthy..."
 
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
-  API_CODE=$(curl -sSo /dev/null -w "%{http_code}" "https://${API_DOMAIN}/health" 2>/dev/null || echo "000")
+  API_CODE=$(curl -sSo /dev/null -w "%{http_code}" "https://${API_DOMAIN}/" 2>/dev/null || echo "000")
   WEB_CODE=$(curl -sSo /dev/null -w "%{http_code}" "https://${DOMAIN}/"        2>/dev/null || echo "000")
 
   if [[ "$API_CODE" == "200" && "$WEB_CODE" =~ ^(200|301|302)$ ]]; then
