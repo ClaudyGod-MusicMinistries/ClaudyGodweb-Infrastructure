@@ -61,12 +61,16 @@ REQUIRED_VARS=(
   REDIS_PASSWORD
   JWT_KEY ENCRYPTION_KEY
   EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD
-  PAYSTACK_SECRET_KEY NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY
-  ANTHROPIC_API_KEY
   GRAFANA_ADMIN_PASSWORD
 )
 
-info "Validating environment variables..."
+# Optional variables (warn if missing, but don't block deployment)
+OPTIONAL_VARS=(
+  PAYSTACK_SECRET_KEY NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY
+  ANTHROPIC_API_KEY
+)
+
+info "Validating required environment variables..."
 missing=0
 for var in "${REQUIRED_VARS[@]}"; do
   val="${!var:-}"
@@ -79,6 +83,17 @@ for var in "${REQUIRED_VARS[@]}"; do
 done
 [[ $missing -eq 0 ]] || die "Fix the missing variables above before deploying."
 success "All required variables set"
+
+info "Checking optional variables..."
+for var in "${OPTIONAL_VARS[@]}"; do
+  val="${!var:-}"
+  if [[ -z "$val" || "$val" == *CHANGE_ME* ]]; then
+    echo -e "  ${YELLOW}⊘${NC} $var not configured (payment/AI features disabled)"
+  else
+    echo -e "  ${GREEN}✓${NC} $var"
+  fi
+done
+success "Validation complete"
 
 # ────────────────────────────────────────────────────────────────────────────
 section "PULLING IMAGES FROM GHCR (TAG=$TAG)"
