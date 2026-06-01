@@ -153,15 +153,14 @@ services:
       # Encryption — matches EncryptionService config key
       Encryption__Key: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
 
-      # Email (Brevo SMTP)
-      EmailSettings__SmtpHost: ${EMAIL_SMTP_HOST}
-      EmailSettings__SmtpPort: ${EMAIL_SMTP_PORT}
-      EmailSettings__SmtpUsername: ${EMAIL_SMTP_USERNAME}
-      EmailSettings__SmtpPassword: ${EMAIL_SMTP_PASSWORD}
-      EmailSettings__FromAddress: ${EMAIL_FROM_ADDRESS}
-      EmailSettings__FromName: ${EMAIL_FROM_NAME}
-      EmailSettings__AdminEmail: ${EMAIL_ADMIN}
-      EmailSettings__UseTls: "true"
+      # Email (Brevo SMTP) — keys match EmailService.cs: Email:SmtpHost, Email:SenderEmail, etc.
+      Email__SmtpHost: ${EMAIL_SMTP_HOST:-smtp-relay.brevo.com}
+      Email__SmtpPort: ${EMAIL_SMTP_PORT:-587}
+      Email__SmtpUsername: ${EMAIL_SMTP_USERNAME}
+      Email__SmtpPassword: ${EMAIL_SMTP_PASSWORD}
+      Email__SenderEmail: ${EMAIL_FROM_ADDRESS}
+      Email__SenderName: ${EMAIL_FROM_NAME:-ClaudyGod Music Ministries}
+      Email__UsePostfix: "false"
 
       # Paystack (optional — set when payment gateway is ready)
       PaystackSettings__SecretKey: ${PAYSTACK_SECRET_KEY:-}
