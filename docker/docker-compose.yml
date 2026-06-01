@@ -258,13 +258,25 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: "3000"
-      NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
-      NEXT_PUBLIC_SITE_URL: https://${DOMAIN}
-      NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY}
       NEXT_TELEMETRY_DISABLED: "1"
 
+      # Server-side only — used by Next.js API routes to reach the .NET API
+      # directly on the Docker-internal network (bypasses Traefik/internet).
+      # backendProxy.ts: const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:8080'
+      API_BASE_URL: http://api:8080
+
+      # Server-side Paystack secret — used by /api/payments/* route handlers
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+
+      # NEXT_PUBLIC_* vars are baked into the image at build time (build-args).
+      # They cannot be changed at runtime — these entries document expected values.
+      NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+      NEXT_PUBLIC_SITE_URL: https://${DOMAIN}
+      NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY:-}
+
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ >/dev/null 2>&1 || exit 1"]
+      # Next.js standalone image has no wget/curl. Use bash /dev/tcp TCP check.
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/3000' 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
