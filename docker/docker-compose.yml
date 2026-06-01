@@ -138,18 +138,20 @@ services:
       # Database (Supabase managed Postgres)
       ConnectionStrings__DefaultConnection: ${SUPABASE_CONNECTION_STRING:?SUPABASE_CONNECTION_STRING is required}
 
-      # Redis
-      ConnectionStrings__RedisConnection: redis://:${REDIS_PASSWORD}@redis:6379
+      # Redis — StackExchange.Redis connection string format (not URL format)
+      # Program.cs reads Redis:ConnectionString → env var Jwt__Key (double-underscore = colon)
+      Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
+      Redis__InstanceName: "claudygod:"
 
-      # JWT
-      JwtSettings__SecretKey: ${JWT_KEY:?JWT_KEY is required}
-      JwtSettings__Issuer: https://${API_DOMAIN}
-      JwtSettings__Audience: https://${DOMAIN}
-      JwtSettings__ExpirationMinutes: "60"
-      JwtSettings__RefreshTokenExpirationDays: "7"
+      # JWT — must match what Program.cs and JwtService read: Jwt:Key / Jwt:Issuer / Jwt:Audience
+      Jwt__Key: ${JWT_KEY:?JWT_KEY is required}
+      Jwt__Issuer: https://${API_DOMAIN}
+      Jwt__Audience: https://${DOMAIN}
+      Jwt__AccessTokenExpiryMinutes: "60"
+      Jwt__RefreshTokenExpiryDays: "7"
 
-      # Encryption
-      EncryptionSettings__Key: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      # Encryption — matches EncryptionService config key
+      Encryption__Key: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
 
       # Email (Brevo SMTP)
       EmailSettings__SmtpHost: ${EMAIL_SMTP_HOST}
@@ -180,7 +182,9 @@ services:
       Serilog__WriteTo__1__Args__rollingInterval: "Day"
 
     healthcheck:
-      test: ["CMD-SHELL", "netstat -tlnp 2>/dev/null | grep -q 8080 || exit 1"]
+      # bash /dev/tcp is a built-in — no wget/curl/netstat needed in the slim image.
+      # Opens a TCP connection to port 8080; exits 0 if the port is listening.
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/8080' 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
