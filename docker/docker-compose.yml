@@ -50,12 +50,6 @@ services:
           --maxmemory-policy "$${REDIS_MAX_MEMORY_POLICY}" \
           --bind 0.0.0.0
 
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
 
     deploy:
       resources:
@@ -180,14 +174,6 @@ services:
       Serilog__WriteTo__1__Args__path: "/app/logs/api-.txt"
       Serilog__WriteTo__1__Args__rollingInterval: "Day"
 
-    healthcheck:
-      # bash /dev/tcp is a built-in — no wget/curl/netstat needed in the slim image.
-      # Opens a TCP connection to port 8080; exits 0 if the port is listening.
-      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/8080' 2>/dev/null || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
     depends_on:
       # Migrations now run in CI (GitHub Actions runner has direct Supabase access).
@@ -272,13 +258,6 @@ services:
       NEXT_PUBLIC_SITE_URL: https://${DOMAIN}
       NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY:-}
 
-    healthcheck:
-      # Next.js standalone image has no wget/curl. Use bash /dev/tcp TCP check.
-      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/3000' 2>/dev/null || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
     depends_on:
       api:
@@ -351,12 +330,6 @@ services:
       GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN}
       GF_INSTALL_PLUGINS: "grafana-piechart-panel"
 
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
     deploy:
       resources:
