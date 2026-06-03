@@ -327,3 +327,11 @@ rebuild-deploy: env-check ## Deploy fresh infrastructure
 	@$(MAKE) ps
 	@echo ""
 	@echo "$(YELLOW)Run 'make health-check' to verify endpoints$(NC)"
+validate-docker-compose: ## Validate docker-compose syntax and configuration
+	@echo "$(BLUE)▶ Validating docker-compose configuration...$(NC)"
+	@$(DOCKER_COMPOSE) config > /dev/null && echo "$(GREEN)✓ docker-compose.yml is valid$(NC)" || (echo "$(RED)✗ Invalid docker-compose.yml$(NC)" && exit 1)
+	@echo "$(GREEN)✓ All configuration validated$(NC)"
+
+pre-deploy: validate-docker-compose env-check ## Run pre-deployment checks
+	@echo "$(GREEN)✓ Pre-deployment validation passed$(NC)"
+
