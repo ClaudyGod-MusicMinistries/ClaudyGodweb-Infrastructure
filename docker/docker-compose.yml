@@ -106,7 +106,8 @@ services:
   ##############################################################################
   api:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
-    container_name: claudygod_api
+    # No container_name: Docker requires unique names, and this service is
+    # scaled to multiple replicas in production (`--scale api=N`).
     restart: unless-stopped
     pull_policy: always
     security_opt:
