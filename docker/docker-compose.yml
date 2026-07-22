@@ -154,6 +154,12 @@ services:
       # Encryption — matches EncryptionService config key
       Encryption__Key: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
 
+      # API key gate — ApiKeyMiddleware requires x-api-key on every controller
+      # not marked [PublicEndpoint]. Security:ApiKeys binds as a string[] from
+      # config, so env-var array indexing (__0) is required here; the web
+      # container below sends this same value back as the x-api-key header.
+      Security__ApiKeys__0: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+
       # Email (Brevo SMTP) — keys match EmailService.cs: Email:SmtpHost, Email:SenderEmail, etc.
       Email__SmtpHost: ${EMAIL_SMTP_HOST:-smtp-relay.brevo.com}
       Email__SmtpPort: ${EMAIL_SMTP_PORT:-587}
@@ -255,6 +261,11 @@ services:
       # directly on the Docker-internal network (bypasses Traefik/internet).
       # backendProxy.ts: const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:8080'
       API_BASE_URL: http://api:8080
+
+      # Server-side API key — backendProxy.ts attaches this as x-api-key on every
+      # proxied request. Must match one of the api service's Security__ApiKeys
+      # values above, or every non-[PublicEndpoint] backend call gets a 401.
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
 
       # Server-side Paystack secret — used by /api/payments/* route handlers
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
