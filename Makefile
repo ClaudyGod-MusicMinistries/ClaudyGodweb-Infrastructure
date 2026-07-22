@@ -126,13 +126,15 @@ down: ## Stop and remove all containers (keeps volumes)
 #                         MAINTENANCE MODE                                     #
 ################################################################################
 
-maintenance: ## Enable maintenance mode (503 via shared error-service)
+maintenance: ## Enable maintenance mode (503 maintenance page via Traefik)
 	@echo "$(YELLOW)⚠ Enabling maintenance mode...$(NC)"
-	$(DOCKER_COMPOSE_MAINT) up -d
+	@docker rm -f claudygod_maintenance >/dev/null 2>&1 || true
+	$(DOCKER_COMPOSE_MAINT) up -d maintenance
 	@echo "$(YELLOW)Maintenance mode enabled. Disable with: make maintenance-off$(NC)"
 
 maintenance-off: ## Disable maintenance mode and bring stack back live
 	@echo "$(BLUE)▶ Disabling maintenance mode...$(NC)"
+	@docker rm -f claudygod_maintenance >/dev/null 2>&1 || true
 	$(DOCKER_COMPOSE) up -d --remove-orphans
 	@echo "$(GREEN)✓ Services live again!$(NC)"
 

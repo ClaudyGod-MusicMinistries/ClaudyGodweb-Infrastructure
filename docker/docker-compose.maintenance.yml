@@ -4,28 +4,38 @@
 # Use this overlay to put the entire site in maintenance mode without         #
 # bringing down the actual services.                                          #
 #                                                                              #
-# Usage:                                                                       #
-#   $ docker compose -f docker-compose.yml \                                 #
-#                    -f docker-compose.maintenance.yml \                     #
-#                    up -d                                                    #
+# Usage (always through make — see below for why):                           #
+#   $ make maintenance       # enable                                        #
+#   $ make maintenance-off   # disable                                       #
 #                                                                              #
-# This will intercept all traffic and return a 503 Maintenance page.         #
-# To disable maintenance mode, re-run without this overlay:                  #
-#   $ docker compose up -d                                                   #
+# This will intercept all traffic and return a 503 Maintenance page.          #
+#                                                                              #
+# IMPORTANT: always drive this via `make maintenance` / `make maintenance-off`,#
+# never `docker compose -f docker-compose.maintenance.yml ...` on its own.    #
+# Without the base file, Compose has no top-level `name:` to inherit and      #
+# falls back to the directory name ("docker") as the project name — so a     #
+# bare `down` won't find the container `make maintenance` created under the  #
+# "claudygod" project, leaving an orphaned container that then collides on   #
+# the next `up`. The explicit `name:` below guards against that even if this #
+# file is ever invoked standalone.                                            #
 #                                                                              #
 # The maintenance router has higher priority (1000) than normal routers       #
-# (100-500), ensuring it intercepts all requests.                            #
+# (100-500), ensuring it intercepts all requests.                             #
 #                                                                              #
 ################################################################################
 
-version: '3.9'
+name: claudygod
 
 services:
 
   maintenance:
-    image: kennethreitz/httpbin  # Or any lightweight HTTP server
+    image: nginx:alpine
     container_name: claudygod_maintenance
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
     networks:
       - traefik-public
@@ -33,16 +43,28 @@ services:
     expose:
       - "80"
 
-    # Override image with a simple maintenance response
-    command: [
-      "python", "-m", "http.server",
-      "--bind", "0.0.0.0", "--port", "80",
-      "--directory", "/maintenance"
-    ]
-
     volumes:
-      # Mount maintenance HTML page
-      - ./docker/maintenance:/maintenance:ro
+      # Static maintenance page, served read-only
+      # (paths are relative to --project-directory, i.e. the repo root)
+      - ./docker/maintenance/index.html:/usr/share/nginx/html/index.html:ro
+      # Custom server block: always returns 503 except for the internal
+      # /healthz probe (Docker's healthcheck would otherwise never pass,
+      # since the intentional public response code is 503, not 200)
+      - ./docker/maintenance/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
 
     labels:
       # CRITICAL: priority=1000 intercepts ALL traffic before normal routers
@@ -53,8 +75,9 @@ services:
       - "traefik.http.routers.maintenance.rule=PathPrefix(`/`)"
       - "traefik.http.routers.maintenance.entrypoints=web,websecure"
       - "traefik.http.routers.maintenance.service=maintenance"
-      - "traefik.http.routers.maintenance.priority=1000"  # High priority to intercept all
+      - "traefik.http.routers.maintenance.priority=1000"
       - "traefik.http.routers.maintenance.tls=true"
+      - "traefik.http.routers.maintenance.tls.certresolver=letsencrypt"
 
       # Service configuration
       - "traefik.http.services.maintenance.loadbalancer.server.port=80"
