@@ -117,8 +117,17 @@ services:
     read_only: true
 
     networks:
-      - traefik-public
-      - claudygod-internal
+      traefik-public:
+      # traefik-public is shared across every project on this server (mobile
+      # app, wisdomchurch, etc.) — Compose gives every service a network alias
+      # equal to its own service name, so a generic "api" here would collide
+      # with any other project's service also named "api" (confirmed: it does,
+      # with ClaudyGod-MobileApp/admin's api service). claudygod-internal is
+      # this project's own private network, so a project-specific alias here
+      # is guaranteed collision-free — this is what web's API_BASE_URL uses.
+      claudygod-internal:
+        aliases:
+          - claudygod-api-internal
     expose:
       - "8080"
 
@@ -259,8 +268,15 @@ services:
 
       # Server-side only — used by Next.js API routes to reach the .NET API
       # directly on the Docker-internal network (bypasses Traefik/internet).
+      # Uses the project-specific alias (claudygod-api-internal), NOT the bare
+      # "api" hostname — traefik-public is shared across every project on this
+      # server, and a generic "api" alias there collides with any other
+      # project's service also named "api" (confirmed collision with
+      # ClaudyGod-MobileApp/admin's own "api" service — Docker's embedded DNS
+      # was non-deterministically round-robining between both containers,
+      # which is exactly why these calls intermittently 404'd).
       # backendProxy.ts: const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:8080'
-      API_BASE_URL: http://api:8080
+      API_BASE_URL: http://claudygod-api-internal:8080
 
       # Server-side API key — backendProxy.ts attaches this as x-api-key on every
       # proxied request. Must match one of the api service's Security__ApiKeys
