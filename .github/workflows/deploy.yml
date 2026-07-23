@@ -79,6 +79,15 @@ jobs:
 
             echo "→ Deploying service: $SERVICE (tag: $TAG)"
 
+            # NOTE: --remove-orphans is intentionally NOT used on the single-service
+            # (api/web) paths below. It prunes ANY container not matching a service
+            # in the current compose file project-wide, not just the one being
+            # deployed — combined with `--no-deps -d <one-service>`, a stale/renamed
+            # service would get its old container deleted and NEVER replaced, since
+            # the command never asked to start it. That silently took the whole
+            # frontend down on 2026-07-23 after a compose service rename. Orphan
+            # cleanup is only safe as a full-stack operation — it stays in the
+            # `all` path below, which starts every service in the same command.
             case "$SERVICE" in
               api)
                 echo "→ Pulling API + migrate images..."
@@ -88,7 +97,8 @@ jobs:
                 $COMPOSE run --rm migrate || { echo "✗ Migrations failed"; exit 1; }
 
                 echo "→ Restarting API..."
-                $COMPOSE up --no-deps --remove-orphans -d claudygod-api
+                $COMPOSE up --no-deps -d claudygod-api
+                CHECK_SERVICES="claudygod-api"
                 ;;
 
               web)
@@ -96,7 +106,8 @@ jobs:
                 $COMPOSE pull claudygod-web
 
                 echo "→ Restarting web..."
-                $COMPOSE up --no-deps --remove-orphans -d claudygod-web
+                $COMPOSE up --no-deps -d claudygod-web
+                CHECK_SERVICES="claudygod-web"
                 ;;
 
               all)
@@ -108,11 +119,38 @@ jobs:
 
                 echo "→ Restarting API + web..."
                 $COMPOSE up --no-deps --remove-orphans -d claudygod-api claudygod-web
+                CHECK_SERVICES="claudygod-api claudygod-web"
                 ;;
             esac
 
             # Prune images older than 24h to free disk
             docker image prune -f --filter "until=24h" >/dev/null
 
-            echo "✓ Deploy complete — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "→ Verifying deployed services are actually running..."
+            sleep 5
+            for svc in $CHECK_SERVICES; do
+              STATE="$($COMPOSE ps --format '{{.Service}} {{.State}}' | awk -v s="$svc" '$1==s {print $2}')"
+              if [ "$STATE" != "running" ]; then
+                echo "✗ Service $svc is not running (state: ${STATE:-absent}) after deploy!"
+                $COMPOSE logs --tail=100 "$svc" || true
+                exit 1
+              fi
+              echo "  ✓ $svc is running"
+            done
+
+            echo "→ Verifying public endpoints respond..."
+            DOMAIN="$(grep -E '^DOMAIN=' "$DEPLOY_PATH/.env" | tail -1 | cut -d= -f2-)"
+            API_DOMAIN="$(grep -E '^API_DOMAIN=' "$DEPLOY_PATH/.env" | tail -1 | cut -d= -f2-)"
+            if [[ "$CHECK_SERVICES" == *claudygod-web* ]] && ! curl -sSf -o /dev/null --max-time 10 "https://${DOMAIN}/"; then
+              echo "✗ https://${DOMAIN}/ did not respond after deploy!"
+              $COMPOSE logs --tail=100 claudygod-web || true
+              exit 1
+            fi
+            if [[ "$CHECK_SERVICES" == *claudygod-api* ]] && ! curl -sSf -o /dev/null --max-time 10 "https://${API_DOMAIN}/healthz"; then
+              echo "✗ https://${API_DOMAIN}/healthz did not respond after deploy!"
+              $COMPOSE logs --tail=100 claudygod-api || true
+              exit 1
+            fi
+
+            echo "✓ Deploy complete and verified — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             $COMPOSE ps
