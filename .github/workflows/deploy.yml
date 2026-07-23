@@ -82,32 +82,32 @@ jobs:
             case "$SERVICE" in
               api)
                 echo "→ Pulling API + migrate images..."
-                $COMPOSE pull api migrate
+                $COMPOSE pull claudygod-api migrate
 
                 echo "→ Running migrations..."
                 $COMPOSE run --rm migrate || { echo "✗ Migrations failed"; exit 1; }
 
                 echo "→ Restarting API..."
-                $COMPOSE up --no-deps --remove-orphans -d api
+                $COMPOSE up --no-deps --remove-orphans -d claudygod-api
                 ;;
 
               web)
                 echo "→ Pulling web image..."
-                $COMPOSE pull web
+                $COMPOSE pull claudygod-web
 
                 echo "→ Restarting web..."
-                $COMPOSE up --no-deps --remove-orphans -d web
+                $COMPOSE up --no-deps --remove-orphans -d claudygod-web
                 ;;
 
               all)
                 echo "→ Pulling all images..."
-                $COMPOSE pull api migrate web
+                $COMPOSE pull claudygod-api migrate claudygod-web
 
                 echo "→ Running migrations..."
                 $COMPOSE run --rm migrate || { echo "✗ Migrations failed"; exit 1; }
 
                 echo "→ Restarting API + web..."
-                $COMPOSE up --no-deps --remove-orphans -d api web
+                $COMPOSE up --no-deps --remove-orphans -d claudygod-api claudygod-web
                 ;;
             esac
 
