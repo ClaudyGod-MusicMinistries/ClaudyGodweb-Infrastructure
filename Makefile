@@ -85,10 +85,10 @@ logs: ## Follow production logs (all services)
 	$(DOCKER_COMPOSE) logs -f --tail=100
 
 logs-api: ## Follow API service logs
-	$(DOCKER_COMPOSE) logs -f --tail=50 api
+	$(DOCKER_COMPOSE) logs -f --tail=50 claudygod-api
 
 logs-web: ## Follow web (frontend) service logs
-	$(DOCKER_COMPOSE) logs -f --tail=50 web
+	$(DOCKER_COMPOSE) logs -f --tail=50 claudygod-web
 
 logs-redis: ## Follow Redis service logs
 	$(DOCKER_COMPOSE) logs -f --tail=50 redis
@@ -112,10 +112,10 @@ restart: ## Restart all services
 	@echo "$(GREEN)✓ Services restarted!$(NC)"
 
 restart-api: ## Restart API service only
-	$(DOCKER_COMPOSE) restart api
+	$(DOCKER_COMPOSE) restart claudygod-api
 
 restart-web: ## Restart web (frontend) service only
-	$(DOCKER_COMPOSE) restart web
+	$(DOCKER_COMPOSE) restart claudygod-web
 
 down: ## Stop and remove all containers (keeps volumes)
 	@echo "$(YELLOW)⚠ Stopping all services...$(NC)"

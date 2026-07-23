@@ -104,10 +104,14 @@ services:
   ##############################################################################
   #                       .NET 8 BACKEND API                                   #
   ##############################################################################
-  api:
+  claudygod-api:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     # No container_name: Docker requires unique names, and this service is
-    # scaled to multiple replicas in production (`--scale api=N`).
+    # scaled to multiple replicas in production (`--scale claudygod-api=N`).
+    # Service key itself (not just an alias) is namespaced so its default
+    # network alias on the shared traefik-public network can't collide with
+    # another project's own "api" service (see claudygod-api-internal note
+    # on the internal network below, and web's API_BASE_URL).
     restart: unless-stopped
     pull_policy: always
     security_opt:
@@ -237,7 +241,7 @@ services:
   ##############################################################################
   #                       NEXT.JS FRONTEND                                     #
   ##############################################################################
-  web:
+  claudygod-web:
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
     container_name: claudygod_web
     restart: unless-stopped
@@ -294,7 +298,7 @@ services:
 
 
     depends_on:
-      api:
+      claudygod-api:
         condition: service_started
 
     deploy:
