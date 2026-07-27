@@ -103,5 +103,5 @@ scripts/             deploy, validate, backup, and restore automation
 ARCHITECTURE.md      production design and improvement roadmap
 ```
 
-Do not use the older status/guide files as executable specifications; the
-Compose model, `.env.example`, this README, and `ARCHITECTURE.md` are canonical.
+The Compose model, `.env.example`, this README, and `ARCHITECTURE.md` are the
+canonical infrastructure specifications.

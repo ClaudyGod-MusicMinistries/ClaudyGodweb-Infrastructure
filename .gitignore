@@ -12,9 +12,6 @@ logs/
 *.swp
 *.swo
 *~
-.DS_Store
-.vscode/
-.idea/
 
 # Database exports and backups (local only, not for repo)
 backups/
@@ -23,14 +20,9 @@ dumps/
 *.sql.gz
 
 # Container artifacts
-.dockerignore
 docker/*/node_modules
 docker/*/.next
 docker/*/dist
-
-# Kubernetes secrets (never commit real secrets)
-k8s/configs/secret.yaml
-k8s/**/*-secrets.yaml
 
 # IDE and editor files
 .vscode/
@@ -49,8 +41,3 @@ Thumbs.db
 tmp/
 temp/
 .tmp/
-
-# Node package manager lock files (optional for stability)
-# Uncomment if you want consistency across installs
-# node_modules/
-# package-lock.json
