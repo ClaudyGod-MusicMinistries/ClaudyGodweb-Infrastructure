@@ -49,6 +49,17 @@ http:
           ipstrategy:
             depth: 1
 
+    # API defaults. Endpoint-specific auth/AI policies can be attached by
+    # router labels in the application stack.
+    rate-limit-api:
+      rateLimit:
+        average: 50
+        period: "1s"
+        burst: 100
+        sourcecriterion:
+          ipstrategy:
+            depth: 1
+
     # Auth endpoints (stricter)
     rate-limit-auth:
       rateLimit:

@@ -28,12 +28,16 @@ jobs:
     name: Deploy → Production VPS
     runs-on: ubuntu-latest
     environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT }}
 
       # Determine which service to deploy based on trigger
       - name: Resolve deploy target
@@ -68,7 +72,8 @@ jobs:
             cd "$DEPLOY_PATH"
 
             # Sync infra repo to latest main
-            git fetch origin main && git reset --hard origin/main || true
+            git fetch origin main
+            git reset --hard origin/main
 
             # Authenticate to GHCR on the server
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -121,6 +126,10 @@ jobs:
                 $COMPOSE up --no-deps --remove-orphans -d claudygod-api claudygod-web
                 CHECK_SERVICES="claudygod-api claudygod-web"
                 ;;
+              *)
+                echo "✗ Invalid deployment target: $SERVICE (expected api, web, or all)"
+                exit 2
+                ;;
             esac
 
             # Prune images older than 24h to free disk
@@ -129,9 +138,8 @@ jobs:
             echo "→ Verifying deployed services are actually running..."
             sleep 5
             for svc in $CHECK_SERVICES; do
-              STATE="$($COMPOSE ps --format '{{.Service}} {{.State}}' | awk -v s="$svc" '$1==s {print $2}')"
-              if [ "$STATE" != "running" ]; then
-                echo "✗ Service $svc is not running (state: ${STATE:-absent}) after deploy!"
+              if ! $COMPOSE ps --status running --services | grep -Fxq "$svc"; then
+                echo "✗ Service $svc has no running container after deploy!"
                 $COMPOSE logs --tail=100 "$svc" || true
                 exit 1
               fi

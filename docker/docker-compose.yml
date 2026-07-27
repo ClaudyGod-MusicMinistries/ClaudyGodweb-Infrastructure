@@ -11,19 +11,22 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "5"
 
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
 
   ##############################################################################
   #                       REDIS — Cache & Session Store                        #
   ##############################################################################
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     container_name: claudygod_redis
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+    <<: *default-security
 
     networks:
       - claudygod-internal
@@ -46,7 +49,7 @@ services:
       - |
         exec redis-server \
           --requirepass "$${REDIS_PASSWORD}" \
-          --maxmemory 512mb \
+          --maxmemory 192mb \
           --maxmemory-policy "$${REDIS_MAX_MEMORY_POLICY}" \
           --bind 0.0.0.0
 
@@ -75,6 +78,10 @@ services:
     container_name: claudygod_migrate
     restart: "no"
     pull_policy: always
+    <<: *default-security
+    read_only: true
+    tmpfs:
+      - /tmp
 
     # Use host network so the container inherits the host's DNS and routing.
     # This bypasses Docker's embedded DNS (which cannot forward to upstream
@@ -114,10 +121,7 @@ services:
     # on the internal network below, and web's API_BASE_URL).
     restart: unless-stopped
     pull_policy: always
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+    <<: *default-security
     read_only: true
 
     networks:
@@ -246,10 +250,7 @@ services:
     container_name: claudygod_web
     restart: unless-stopped
     pull_policy: always
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+    <<: *default-security
     read_only: true
 
     networks:
@@ -345,10 +346,7 @@ services:
     image: grafana/grafana:11.3.0
     container_name: claudygod_grafana
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+    <<: *default-security
 
     networks:
       - traefik-public
@@ -358,13 +356,19 @@ services:
 
     volumes:
       - grafana_data:/var/lib/grafana
-      - grafana_provisioning:/etc/grafana/provisioning
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
 
     environment:
       TZ: ${TZ:-UTC}
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: "strict"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN}
       GF_INSTALL_PLUGINS: "grafana-piechart-panel"
 
@@ -406,6 +410,7 @@ networks:
   claudygod-internal:
     driver: bridge
     internal: true
+    name: claudygod-internal
 
 
 ################################################################################
@@ -420,5 +425,3 @@ volumes:
     name: claudygod_api_logs
   grafana_data:
     name: claudygod_grafana_data
-  grafana_provisioning:
-    name: claudygod_grafana_provisioning

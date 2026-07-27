@@ -1,7 +1,6 @@
 .PHONY: help deploy pull logs logs-api logs-web logs-redis logs-traefik ps \
         restart restart-api restart-web down maintenance maintenance-off \
         db-backup db-restore db-list db-shell \
-        k8s-apply k8s-status k8s-logs-api k8s-logs-web k8s-rollout k8s-scale-api k8s-port-forward-api k8s-delete \
         clean clean-all lint env-check version health-check info all status validate \
         rebuild rebuild-clean rebuild-images rebuild-deploy
 
@@ -52,9 +51,6 @@ help: ## Display this help message
 	@echo "$(YELLOW)DATABASE OPERATIONS:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^db-' | awk -F':.*## ' '{printf "  %-22s %s\n", $$1, $$2}'
 	@echo ""
-	@echo "$(YELLOW)KUBERNETES (ALTERNATIVE):$(NC)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^k8s-' | awk -F':.*## ' '{printf "  %-22s %s\n", $$1, $$2}'
-	@echo ""
 	@echo "$(YELLOW)DEVELOPMENT & MAINTENANCE:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^(clean|lint|env-check|version|health-check|info|validate)' | awk -F':.*## ' '{printf "  %-22s %s\n", $$1, $$2}'
 	@echo ""
@@ -70,11 +66,8 @@ help: ## Display this help message
 #                      PRODUCTION DEPLOYMENT TARGETS                          #
 ################################################################################
 
-deploy: ## Pull images and deploy all services (full deployment)
-	@echo "$(BLUE)▶ Deploying ClaudyGod infrastructure...$(NC)"
-	$(DOCKER_COMPOSE) pull
-	$(DOCKER_COMPOSE) up -d --remove-orphans
-	@echo "$(GREEN)✓ Deployment complete!$(NC)"
+deploy: ## Validate, migrate, deploy, and verify the full stack
+	$(PROJECT_ROOT)/scripts/deploy.sh
 
 pull: ## Pull latest images from GHCR without deploying
 	@echo "$(BLUE)▶ Pulling latest images...$(NC)"
@@ -160,45 +153,6 @@ db-shell: ## Open interactive psql shell to Supabase
 	docker run --rm -it postgres:16-alpine psql "$$SUPABASE_CONNECTION_STRING"
 
 ################################################################################
-#                      KUBERNETES OPERATIONS                                   #
-################################################################################
-
-k8s-apply: ## Deploy to Kubernetes cluster (requires kubectl)
-	@echo "$(BLUE)▶ Deploying to Kubernetes...$(NC)"
-	kubectl apply -k $(PROJECT_ROOT)/k8s/
-	@echo "$(GREEN)✓ Kubernetes deployment complete!$(NC)"
-
-k8s-status: ## Show status of all Kubernetes resources in claudygod namespace
-	@echo "$(BLUE)Kubernetes Resources:$(NC)"
-	kubectl get all -n claudygod
-	@echo ""
-	@echo "$(BLUE)Pods:$(NC)"
-	kubectl get pods -n claudygod -o wide
-
-k8s-logs-api: ## Follow API pod logs
-	kubectl logs -n claudygod -l app=cgm-api -f
-
-k8s-logs-web: ## Follow web pod logs
-	kubectl logs -n claudygod -l app=cgm-web -f
-
-k8s-rollout: ## Restart all deployments (rolling update)
-	@echo "$(BLUE)▶ Rolling restart of all deployments...$(NC)"
-	kubectl rollout restart deployment -n claudygod
-	kubectl rollout status deployment -n claudygod
-
-k8s-scale-api: ## Scale API deployment (usage: make k8s-scale-api REPLICAS=5)
-	@kubectl scale deployment cgm-api --replicas=$(REPLICAS) -n claudygod
-
-k8s-port-forward-api: ## Forward API pod port to localhost:8080
-	@echo "Forwarding localhost:8080 → API pod:8080"
-	kubectl port-forward -n claudygod svc/cgm-api 8080:8080
-
-k8s-delete: ## Delete all Kubernetes resources in claudygod namespace (DESTRUCTIVE)
-	@echo "$(YELLOW)⚠ Deleting all Kubernetes resources...$(NC)"
-	kubectl delete -k $(PROJECT_ROOT)/k8s/
-	@echo "$(GREEN)✓ Kubernetes resources deleted!$(NC)"
-
-################################################################################
 #                    DEVELOPMENT & MAINTENANCE                                 #
 ################################################################################
 
@@ -215,10 +169,8 @@ clean-all: ## DESTRUCTIVE: Remove all claudygod containers, images, and volumes
 	docker system prune -af --volumes
 	@echo "$(GREEN)✓ Full cleanup complete!$(NC)"
 
-lint: ## Validate docker-compose.yml syntax
-	@echo "$(BLUE)▶ Validating docker-compose.yml...$(NC)"
-	$(DOCKER_COMPOSE) config > /dev/null
-	@echo "$(GREEN)✓ Configuration is valid!$(NC)"
+lint: ## Validate Compose, shell syntax, ShellCheck, and obvious secrets
+	@ENV_FILE=$(ENV_FILE) $(PROJECT_ROOT)/scripts/validate.sh
 
 env-check: ## Verify .env file has all required variables filled in
 	@echo "$(BLUE)▶ Checking environment variables...$(NC)"
@@ -226,6 +178,7 @@ env-check: ## Verify .env file has all required variables filled in
 	missing=0; \
 	for var in DOMAIN API_DOMAIN TAG REGISTRY BACKEND_IMAGE FRONTEND_IMAGE \
 	           SUPABASE_CONNECTION_STRING REDIS_PASSWORD JWT_KEY ENCRYPTION_KEY \
+	           INTERNAL_API_KEY \
 	           EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD \
 	           EMAIL_FROM_ADDRESS AI_MODEL; do \
 	  val=$$(eval echo "\$$$$var"); \
@@ -336,4 +289,3 @@ validate-docker-compose: ## Validate docker-compose syntax and configuration
 
 pre-deploy: validate-docker-compose env-check ## Run pre-deployment checks
 	@echo "$(GREEN)✓ Pre-deployment validation passed$(NC)"
-

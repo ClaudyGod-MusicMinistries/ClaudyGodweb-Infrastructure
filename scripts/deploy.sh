@@ -32,6 +32,8 @@ export TAG="${TAG:-latest}"
 MODE="all"
 [[ "${1:-}" == "--api-only" ]] && MODE="api"
 [[ "${1:-}" == "--web-only" ]] && MODE="web"
+[[ -z "${1:-}" || "${1:-}" == "--api-only" || "${1:-}" == "--web-only" ]] || \
+  die "Unknown argument: ${1}. Use --api-only, --web-only, or no argument."
 
 # ────────────────────────────────────────────────────────────────────────────
 section "PRE-FLIGHT CHECKS"
@@ -59,7 +61,7 @@ REQUIRED_VARS=(
   BACKEND_IMAGE FRONTEND_IMAGE
   SUPABASE_CONNECTION_STRING
   REDIS_PASSWORD
-  JWT_KEY ENCRYPTION_KEY
+  JWT_KEY ENCRYPTION_KEY INTERNAL_API_KEY
   EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD
   GRAFANA_ADMIN_PASSWORD
 )
@@ -99,9 +101,9 @@ success "Validation complete"
 section "PULLING IMAGES FROM GHCR (TAG=$TAG)"
 
 case "$MODE" in
-  api)  $COMPOSE pull api migrate ;;
-  web)  $COMPOSE pull web ;;
-  *)    $COMPOSE pull api migrate web ;;
+  api)  $COMPOSE pull claudygod-api migrate ;;
+  web)  $COMPOSE pull claudygod-web ;;
+  *)    $COMPOSE pull redis claudygod-api migrate claudygod-web grafana ;;
 esac
 success "Images pulled"
 
@@ -117,13 +119,13 @@ section "DEPLOYING SERVICES"
 
 case "$MODE" in
   api)
-    $COMPOSE up -d --no-deps --remove-orphans api
+    $COMPOSE up -d --no-deps claudygod-api
     ;;
   web)
-    $COMPOSE up -d --no-deps --remove-orphans web
+    $COMPOSE up -d --no-deps claudygod-web
     ;;
   *)
-    $COMPOSE up -d --no-deps --remove-orphans redis api web
+    $COMPOSE up -d --remove-orphans redis claudygod-api claudygod-web grafana
     ;;
 esac
 success "Services started"
@@ -135,7 +137,7 @@ TIMEOUT=120; ELAPSED=0; INTERVAL=5
 info "Waiting up to ${TIMEOUT}s for services to be healthy..."
 
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
-  API_CODE=$(curl -sSo /dev/null -w "%{http_code}" "https://${API_DOMAIN}/" 2>/dev/null || echo "000")
+  API_CODE=$(curl -sSo /dev/null -w "%{http_code}" --max-time 10 "https://${API_DOMAIN}/healthz" 2>/dev/null || echo "000")
   WEB_CODE=$(curl -sSo /dev/null -w "%{http_code}" "https://${DOMAIN}/"        2>/dev/null || echo "000")
 
   if [[ "$API_CODE" == "200" && "$WEB_CODE" =~ ^(200|301|302)$ ]]; then
@@ -146,7 +148,7 @@ while [[ $ELAPSED -lt $TIMEOUT ]]; do
   sleep $INTERVAL; ELAPSED=$((ELAPSED + INTERVAL))
 done
 
-[[ $ELAPSED -ge $TIMEOUT ]] && warn "Health check timed out — check logs: make logs"
+[[ $ELAPSED -lt $TIMEOUT ]] || die "Health check timed out — deployment is not healthy. Run: make logs"
 
 # Prune old images to free disk
 docker image prune -f --filter "until=24h" >/dev/null
