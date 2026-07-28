@@ -190,6 +190,16 @@ services:
       PaystackSettings__SecretKey: ${PAYSTACK_SECRET_KEY:-}
       PaystackSettings__PublicKey: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY:-}
 
+      # Website media storage (Supabase S3-compatible gateway) — required at
+      # boot; WebsiteStorageOptions.MissingKeys() throws if any of these
+      # (other than region) are blank or still "CHANGE-ME".
+      Storage__Website__S3Endpoint: ${STORAGE_WEBSITE_S3_ENDPOINT:?STORAGE_WEBSITE_S3_ENDPOINT is required}
+      Storage__Website__S3Region: ${STORAGE_WEBSITE_S3_REGION:-us-east-1}
+      Storage__Website__S3AccessKeyId: ${STORAGE_WEBSITE_S3_ACCESS_KEY_ID:?STORAGE_WEBSITE_S3_ACCESS_KEY_ID is required}
+      Storage__Website__S3SecretAccessKey: ${STORAGE_WEBSITE_S3_SECRET_ACCESS_KEY:?STORAGE_WEBSITE_S3_SECRET_ACCESS_KEY is required}
+      Storage__Website__Bucket: ${STORAGE_WEBSITE_BUCKET:?STORAGE_WEBSITE_BUCKET is required}
+      Storage__Website__PublicBaseUrl: ${STORAGE_WEBSITE_PUBLIC_BASE_URL:?STORAGE_WEBSITE_PUBLIC_BASE_URL is required}
+
       # AIProvider AI (optional — set when payment validation is enabled)
       AIProviderSettings__ApiKey: ${AI_PROVIDER_API_KEY:-}
       AIProviderSettings__Model: ${AI_MODEL:-ai-sonnet-4-6}

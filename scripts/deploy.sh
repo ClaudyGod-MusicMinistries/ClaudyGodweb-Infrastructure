@@ -64,6 +64,9 @@ REQUIRED_VARS=(
   JWT_KEY ENCRYPTION_KEY INTERNAL_API_KEY
   EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD
   GRAFANA_ADMIN_PASSWORD
+  STORAGE_WEBSITE_S3_ENDPOINT STORAGE_WEBSITE_S3_ACCESS_KEY_ID
+  STORAGE_WEBSITE_S3_SECRET_ACCESS_KEY STORAGE_WEBSITE_BUCKET
+  STORAGE_WEBSITE_PUBLIC_BASE_URL
 )
 
 # Optional variables (warn if missing, but don't block deployment)
@@ -76,8 +79,8 @@ info "Validating required environment variables..."
 missing=0
 for var in "${REQUIRED_VARS[@]}"; do
   val="${!var:-}"
-  if [[ -z "$val" || "$val" == *CHANGE_ME* ]]; then
-    echo -e "  ${RED}✗${NC} $var is missing or still set to CHANGE_ME"
+  if [[ -z "$val" || "$val" == *CHANGE_ME* || "$val" == *CHANGE-ME* ]]; then
+    echo -e "  ${RED}✗${NC} $var is missing or still set to a CHANGE_ME/CHANGE-ME placeholder"
     missing=1
   else
     echo -e "  ${GREEN}✓${NC} $var"
