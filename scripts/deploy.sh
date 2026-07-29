@@ -137,11 +137,13 @@ success "Services started"
 section "HEALTH CHECKS"
 
 TIMEOUT=120; ELAPSED=0; INTERVAL=5
+API_HEALTH_URL="https://${API_DOMAIN}/health"
+WEB_HEALTH_URL="https://${DOMAIN}/"
 info "Waiting up to ${TIMEOUT}s for services to be healthy..."
 
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
-  API_CODE=$(curl -sSo /dev/null -w "%{http_code}" --max-time 10 "https://${API_DOMAIN}/healthz" 2>/dev/null || echo "000")
-  WEB_CODE=$(curl -sSo /dev/null -w "%{http_code}" "https://${DOMAIN}/"        2>/dev/null || echo "000")
+  API_CODE=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 "$API_HEALTH_URL" 2>/dev/null) || API_CODE="000"
+  WEB_CODE=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 "$WEB_HEALTH_URL" 2>/dev/null) || WEB_CODE="000"
 
   if [[ "$API_CODE" == "200" && "$WEB_CODE" =~ ^(200|301|302)$ ]]; then
     success "All services healthy"
@@ -151,7 +153,7 @@ while [[ $ELAPSED -lt $TIMEOUT ]]; do
   sleep $INTERVAL; ELAPSED=$((ELAPSED + INTERVAL))
 done
 
-[[ $ELAPSED -lt $TIMEOUT ]] || die "Health check timed out — deployment is not healthy. Run: make logs"
+[[ $ELAPSED -lt $TIMEOUT ]] || die "Health check timed out — deployment is not healthy. API: ${API_HEALTH_URL}; Web: ${WEB_HEALTH_URL}. Run: make logs"
 
 # Prune old images to free disk
 docker image prune -f --filter "until=24h" >/dev/null
@@ -162,7 +164,7 @@ section "DEPLOYMENT SUMMARY"
 success "ClaudyGod deployed successfully!"
 echo ""
 echo -e "  ${YELLOW}Frontend:${NC}  https://${DOMAIN}"
-echo -e "  ${YELLOW}API:${NC}       https://${API_DOMAIN}/healthz"
+echo -e "  ${YELLOW}API:${NC}       ${API_HEALTH_URL}"
 echo -e "  ${YELLOW}Grafana:${NC}   https://${GRAFANA_DOMAIN:-metrics.claudygod.org}"
 echo ""
 echo -e "  ${BLUE}make logs${NC}         — follow all logs"
