@@ -82,6 +82,9 @@ for var in "${REQUIRED_VARS[@]}"; do
   if [[ -z "$val" || "$val" == *CHANGE_ME* || "$val" == *CHANGE-ME* ]]; then
     echo -e "  ${RED}✗${NC} $var is missing or still set to a CHANGE_ME/CHANGE-ME placeholder"
     missing=1
+  elif [[ "$var" == "INTERNAL_API_KEY" && ${#val} -lt 32 ]]; then
+    echo -e "  ${RED}✗${NC} $var must contain at least 32 characters (required by AdminGateway:ApiKey)"
+    missing=1
   else
     echo -e "  ${GREEN}✓${NC} $var"
   fi
@@ -153,7 +156,12 @@ while [[ $ELAPSED -lt $TIMEOUT ]]; do
   sleep $INTERVAL; ELAPSED=$((ELAPSED + INTERVAL))
 done
 
-[[ $ELAPSED -lt $TIMEOUT ]] || die "Health check timed out — deployment is not healthy. API: ${API_HEALTH_URL}; Web: ${WEB_HEALTH_URL}. Run: make logs"
+if [[ $ELAPSED -ge $TIMEOUT ]]; then
+  echo -e "\n${RED}API container diagnostics:${NC}" >&2
+  $COMPOSE ps claudygod-api >&2 || true
+  $COMPOSE logs --tail=100 claudygod-api >&2 || true
+  die "Health check timed out — deployment is not healthy. API: ${API_HEALTH_URL}; Web: ${WEB_HEALTH_URL}."
+fi
 
 # Prune old images to free disk
 docker image prune -f --filter "until=24h" >/dev/null

@@ -182,8 +182,10 @@ env-check: ## Verify .env file has all required variables filled in
 	           EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD \
 	           EMAIL_FROM_ADDRESS AI_MODEL; do \
 	  val=$$(eval echo "\$$$$var"); \
-	  if [ -z "$$val" ] || echo "$$val" | grep -q "CHANGE_ME"; then \
+	  if [ -z "$$val" ] || echo "$$val" | grep -qE "CHANGE[_-]ME"; then \
 	    printf "  $(RED)✗ Missing or placeholder:$(NC) %s\n" "$$var"; missing=1; \
+	  elif [ "$$var" = "INTERNAL_API_KEY" ] && [ "$${#val}" -lt 32 ]; then \
+	    printf "  $(RED)✗ Must contain at least 32 characters:$(NC) %s\n" "$$var"; missing=1; \
 	  else \
 	    printf "  $(GREEN)✓$(NC) %s\n" "$$var"; \
 	  fi; \
