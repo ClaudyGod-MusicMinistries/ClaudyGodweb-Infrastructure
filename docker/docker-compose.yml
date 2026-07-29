@@ -20,13 +20,38 @@ x-security: &default-security
 services:
 
   ##############################################################################
+  #                 REDIS VOLUME OWNERSHIP INITIALIZATION                      #
+  ##############################################################################
+  redis-volume-init:
+    image: redis:7.4-alpine
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R redis:redis /data"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    volumes:
+      - redis_data:/data
+    logging: *default-logging
+
+
+  ##############################################################################
   #                       REDIS — Cache & Session Store                        #
   ##############################################################################
   redis:
     image: redis:7.4-alpine
     container_name: claudygod_redis
+    user: redis
     restart: unless-stopped
     <<: *default-security
+
+    depends_on:
+      redis-volume-init:
+        condition: service_completed_successfully
 
     networks:
       - claudygod-internal
