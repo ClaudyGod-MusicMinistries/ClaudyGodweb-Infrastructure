@@ -137,7 +137,7 @@ success "Services started"
 section "HEALTH CHECKS"
 
 TIMEOUT=120; ELAPSED=0; INTERVAL=5
-API_HEALTH_URL="https://${API_DOMAIN}/health"
+API_HEALTH_URL="https://${API_DOMAIN}/healthz"
 WEB_HEALTH_URL="https://${DOMAIN}/"
 info "Waiting up to ${TIMEOUT}s for services to be healthy..."
 

@@ -154,8 +154,8 @@ jobs:
               $COMPOSE logs --tail=100 claudygod-web || true
               exit 1
             fi
-            if [[ "$CHECK_SERVICES" == *claudygod-api* ]] && ! curl -sSf -o /dev/null --max-time 10 "https://${API_DOMAIN}/health"; then
-              echo "✗ https://${API_DOMAIN}/health did not respond after deploy!"
+            if [[ "$CHECK_SERVICES" == *claudygod-api* ]] && ! curl -sSf -o /dev/null --max-time 10 "https://${API_DOMAIN}/healthz"; then
+              echo "✗ https://${API_DOMAIN}/healthz did not respond after deploy!"
               $COMPOSE logs --tail=100 claudygod-api || true
               exit 1
             fi

@@ -37,7 +37,7 @@ GitHub Actions -> SSH deployment -> Docker Compose on production VPS
 2. A production deployment is serialized through the GitHub `production`
    environment. Configure required reviewers in repository settings.
 3. API deployment pulls the image, runs the one-shot migration, replaces the
-   API service, and verifies `/health`.
+   API service, and verifies `/healthz`.
 4. Web deployment replaces only the web service and verifies the public root.
 5. Full deployments reconcile all runtime services and remove true orphans.
 
@@ -58,7 +58,7 @@ convenient but weakens auditability and deterministic rollback.
 Initial service-level objectives should be agreed with the product owner:
 
 - Public web availability: 99.9% monthly.
-- API availability: 99.9% monthly, measured at `/health`.
+- API availability: 99.9% monthly, measured at `/healthz`.
 - p95 server latency: below 500 ms for non-AI endpoints.
 - Recovery point objective: 24 hours until PITR/backup automation is verified.
 - Recovery time objective: 2 hours, tested quarterly.

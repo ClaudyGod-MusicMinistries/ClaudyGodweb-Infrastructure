@@ -214,7 +214,7 @@ health-check: ## Check health of all public endpoints
 	@echo "$(BLUE)▶ Performing health checks...$(NC)"
 	@export $$(grep -v '^#' $(ENV_FILE) | grep -v '^\s*$$' | xargs); \
 	failed=0; \
-	for url in "https://$$DOMAIN/" "https://$$API_DOMAIN/health"; do \
+	for url in "https://$$DOMAIN/" "https://$$API_DOMAIN/healthz"; do \
 	  code=$$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 "$$url") || code="000"; \
 	  if echo "$$code" | grep -qE '^2'; then \
 	    printf "  $(GREEN)✓$(NC) %s → %s\n" "$$url" "$$code"; \
