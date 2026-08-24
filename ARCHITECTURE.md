@@ -9,7 +9,7 @@ Internet -> shared Traefik/TLS -> Next.js web -> ASP.NET API
                                                 Supabase object storage
                                                 SMTP / payment / AI providers
 
-Operators -> external monitoring platform -> Grafana / Prometheus / alerts
+Operators -> external monitoring platform -> dashboards / metrics / alerts
 GitHub Actions -> SSH -> canonical release script -> Docker Compose VPS
 ```
 
@@ -25,6 +25,9 @@ logical backups, and runbooks.
 - `claudygod-egress` gives API and migration workloads external connectivity
   without attaching migrations to ingress or host networking.
 - No application port is published on the host.
+
+Internal networks and volumes are Compose-project scoped, so staging and
+production can coexist when they use different `COMPOSE_PROJECT_NAME` values.
 
 Only trusted workloads may join the shared ingress network. The web-to-API
 credential authenticates the service, not the end user, and cannot replace
@@ -60,7 +63,7 @@ be enforced by the platform and application repositories:
 
 - VPS provisioning, firewall, SSH hardening, Docker updates, and scheduled jobs
 - shared Traefik and Prometheus deployment, dashboards, alerts, and log storage
-- SSO or private-network protection for Grafana
+- SSO or private-network protection for operational dashboards
 - backend route allowlisting, end-user authorization, metrics, and distinct
   liveness/readiness endpoints
 - repository/environment branch protection and required reviewers

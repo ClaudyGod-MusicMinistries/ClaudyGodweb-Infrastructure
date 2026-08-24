@@ -1,30 +1,7 @@
-################################################################################
-#           MAINTENANCE MODE DOCKER COMPOSE OVERLAY                            #
-#                                                                              #
-# Use this overlay to put the entire site in maintenance mode without         #
-# bringing down the actual services.                                          #
-#                                                                              #
-# Usage (always through make — see below for why):                           #
-#   $ make maintenance       # enable                                        #
-#   $ make maintenance-off   # disable                                       #
-#                                                                              #
-# This will intercept all traffic and return a 503 Maintenance page.          #
-#                                                                              #
-# IMPORTANT: always drive this via `make maintenance` / `make maintenance-off`,#
-# never `docker compose -f docker-compose.maintenance.yml ...` on its own.    #
-# Without the base file, Compose has no top-level `name:` to inherit and      #
-# falls back to the directory name ("docker") as the project name — so a     #
-# bare `down` won't find the container `make maintenance` created under the  #
-# "claudygod" project, leaving an orphaned container that then collides on   #
-# the next `up`. The explicit `name:` below guards against that even if this #
-# file is ever invoked standalone.                                            #
-#                                                                              #
-# The maintenance router has higher priority (1000) than normal routers       #
-# (100-500), ensuring it intercepts all requests.                             #
-#                                                                              #
-################################################################################
+# Hostname-scoped maintenance overlay. Operate through `make maintenance` and
+# `make maintenance-off` so the base model and project name remain consistent.
 
-name: claudygod
+name: ${COMPOSE_PROJECT_NAME:-claudygod}
 
 services:
 
@@ -66,13 +43,11 @@ services:
           memory: 32M
 
     labels:
-      # CRITICAL: priority=1000 intercepts ALL traffic before normal routers
-      # Normal routers have priority ~100-500
       - "traefik.enable=true"
 
       # Scope maintenance mode to this application. A path-only rule on the
       # shared proxy would intercept unrelated applications.
-      - "traefik.http.routers.maintenance.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`) || Host(`${API_DOMAIN}`) || Host(`${GRAFANA_DOMAIN}`)) && PathPrefix(`/`)"
+      - "traefik.http.routers.maintenance.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`) || Host(`${API_DOMAIN}`)) && PathPrefix(`/`)"
       - "traefik.http.routers.maintenance.entrypoints=web,websecure"
       - "traefik.http.routers.maintenance.service=maintenance"
       - "traefik.http.routers.maintenance.priority=1000"
