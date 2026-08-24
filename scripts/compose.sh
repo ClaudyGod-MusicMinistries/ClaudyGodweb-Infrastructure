@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# The shared library is resolved relative to this script at runtime.
 # shellcheck source=lib/common.sh
-# shellcheck disable=SC1091 -- resolved relative to this script at runtime
+# shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 load_env true
 require_docker

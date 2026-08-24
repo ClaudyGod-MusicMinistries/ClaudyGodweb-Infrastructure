@@ -10,7 +10,7 @@ monitoring are platform dependencies owned outside this repository.
 - external Docker network `traefik-public`
 - shared Traefik entrypoints `web` and `websecure` and resolver `letsencrypt`
 - private GHCR access and production DNS
-- a reachable Prometheus service when the monitoring profile is used
+- external monitoring provided by the shared platform
 
 ## Configure and validate
 
@@ -22,6 +22,10 @@ make validate
 
 Keep `.env` mode `0600`. Never commit it. The backup encryption identity must
 live outside the repository and backup bucket.
+
+Pull requests run one focused validation job: Compose rendering, Bash syntax,
+and ShellCheck. Enable GitHub secret scanning and push protection in repository
+settings; these platform controls avoid duplicating security scanners in CI.
 
 ## Release
 

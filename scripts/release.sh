@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+# The shared library is resolved relative to this script at runtime.
 # shellcheck source=lib/common.sh
-# shellcheck disable=SC1091 -- resolved relative to this script at runtime
+# shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 health() {
@@ -56,7 +57,7 @@ deploy() {
   case "$mode" in
     api) pull_services=(claudygod-api migrate); start_services=(claudygod-api); start_options=(--no-deps) ;;
     web) pull_services=(claudygod-web); start_services=(claudygod-web); start_options=(--no-deps) ;;
-    all) pull_services=(redis claudygod-api migrate claudygod-web grafana); start_services=(redis claudygod-api claudygod-web grafana); start_options=(--remove-orphans) ;;
+    all) pull_services=(redis claudygod-api migrate claudygod-web); start_services=(redis claudygod-api claudygod-web); start_options=(--remove-orphans) ;;
     *) die "deploy target must be api, web, or all" ;;
   esac
   validate_release_env

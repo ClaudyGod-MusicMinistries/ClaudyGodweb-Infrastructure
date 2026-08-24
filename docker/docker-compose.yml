@@ -3,7 +3,7 @@
 #                    (Shared Proxy + Supabase + Brevo)                         #
 ################################################################################
 
-name: claudygod
+name: ${COMPOSE_PROJECT_NAME:-claudygod}
 
 x-logging: &default-logging
   driver: json-file
@@ -133,12 +133,7 @@ services:
   ##############################################################################
   claudygod-api:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
-    # No container_name: Docker requires unique names, and this service is
-    # scaled to multiple replicas in production (`--scale claudygod-api=N`).
-    # Service key itself (not just an alias) is namespaced so its default
-    # network alias on the shared traefik-public network can't collide with
-    # another project's own "api" service (see claudygod-api-internal note
-    # on the internal network below, and web's API_BASE_URL).
+    # No fixed container name: Compose may scale this service horizontally.
     restart: unless-stopped
     pull_policy: always
     <<: *default-security
@@ -146,13 +141,6 @@ services:
 
     networks:
       traefik-public:
-      # traefik-public is shared across every project on this server (mobile
-      # app, wisdomchurch, etc.) — Compose gives every service a network alias
-      # equal to its own service name, so a generic "api" here would collide
-      # with any other project's service also named "api" (confirmed: it does,
-      # with ClaudyGod-MobileApp/admin's api service). claudygod-internal is
-      # this project's own private network, so a project-specific alias here
-      # is guaranteed collision-free — this is what web's API_BASE_URL uses.
       claudygod-internal:
         aliases:
           - claudygod-api-internal
@@ -160,13 +148,11 @@ services:
     expose:
       - "8080"
 
-    volumes:
-      - api_uploads:/app/uploads:rw
-      - api_logs:/app/logs:rw
     tmpfs:
       - /tmp
       - /run
       - /app/tmp
+      - /app/uploads
 
     environment:
       TZ: ${TZ:-UTC}
@@ -208,7 +194,7 @@ services:
 
       # Paystack (optional — set when payment gateway is ready)
       PaystackSettings__SecretKey: ${PAYSTACK_SECRET_KEY:-}
-      PaystackSettings__PublicKey: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY:-}
+      PaystackSettings__PublicKey: ${PAYSTACK_PUBLIC_KEY:-}
 
       # Website media storage (Supabase S3-compatible gateway) — required at
       # boot; WebsiteStorageOptions.MissingKeys() throws if any of these
@@ -230,11 +216,6 @@ services:
       # Serilog
       Serilog__MinimumLevel: "Information"
       Serilog__WriteTo__0__Name: "Console"
-      Serilog__WriteTo__1__Name: "File"
-      Serilog__WriteTo__1__Args__path: "/app/logs/api-.txt"
-      Serilog__WriteTo__1__Args__rollingInterval: "Day"
-
-
     depends_on:
       # Migrations now run in CI (GitHub Actions runner has direct Supabase access).
       # The migrate service still exists in this file for manual/emergency use only.
@@ -311,16 +292,7 @@ services:
       PORT: "3000"
       NEXT_TELEMETRY_DISABLED: "1"
 
-      # Server-side only — used by Next.js API routes to reach the .NET API
-      # directly on the Docker-internal network (bypasses Traefik/internet).
-      # Uses the project-specific alias (claudygod-api-internal), NOT the bare
-      # "api" hostname — traefik-public is shared across every project on this
-      # server, and a generic "api" alias there collides with any other
-      # project's service also named "api" (confirmed collision with
-      # ClaudyGod-MobileApp/admin's own "api" service — Docker's embedded DNS
-      # was non-deterministically round-robining between both containers,
-      # which is exactly why these calls intermittently 404'd).
-      # backendProxy.ts: const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:8080'
+      # Server-side traffic stays on the project-scoped internal network.
       API_BASE_URL: http://claudygod-api-internal:8080
 
       # Server-side API key — backendProxy.ts attaches this as x-api-key on every
@@ -330,13 +302,6 @@ services:
 
       # Server-side Paystack secret — used by /api/payments/* route handlers
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
-
-      # NEXT_PUBLIC_* vars are baked into the image at build time (build-args).
-      # They cannot be changed at runtime — these entries document expected values.
-      NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
-      NEXT_PUBLIC_SITE_URL: https://${DOMAIN}
-      NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY:-}
-
 
     depends_on:
       claudygod-api:
@@ -386,75 +351,6 @@ services:
       traefik.http.services.claudygod-web.loadbalancer.healthcheck.interval: "30s"
 
 
-  ##############################################################################
-  #                       GRAFANA — Optional monitoring                        #
-  ##############################################################################
-  grafana:
-    image: grafana/grafana:11.3.0
-    profiles: ["monitoring"]
-    restart: unless-stopped
-    <<: *default-security
-
-    networks:
-      - traefik-public
-      - claudygod-internal
-    expose:
-      - "3000"
-
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-
-    environment:
-      TZ: ${TZ:-UTC}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_SECURITY_COOKIE_SECURE: "true"
-      GF_SECURITY_COOKIE_SAMESITE: "strict"
-      GF_SECURITY_DISABLE_GRAVATAR: "true"
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_ANALYTICS_REPORTING_ENABLED: "false"
-      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-      GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN}
-      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
-      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus:9090}
-
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
-
-    logging: *default-logging
-
-    labels:
-      traefik.enable: "true"
-      traefik.docker.network: traefik-public
-
-      traefik.http.routers.claudygod-grafana-http.rule: "Host(`${GRAFANA_DOMAIN}`)"
-      traefik.http.routers.claudygod-grafana-http.entrypoints: "web"
-
-      traefik.http.routers.claudygod-grafana-secure.rule: "Host(`${GRAFANA_DOMAIN}`)"
-      traefik.http.routers.claudygod-grafana-secure.entrypoints: "websecure"
-      traefik.http.routers.claudygod-grafana-secure.tls: "true"
-      traefik.http.routers.claudygod-grafana-secure.tls.certresolver: "letsencrypt"
-      traefik.http.routers.claudygod-grafana-secure.service: "claudygod-grafana"
-
-      traefik.http.services.claudygod-grafana.loadbalancer.server.port: "3000"
-      traefik.http.services.claudygod-grafana.loadbalancer.healthcheck.path: "/api/health"
-      traefik.http.services.claudygod-grafana.loadbalancer.healthcheck.interval: "30s"
-
-
 ################################################################################
 #                                NETWORKS                                      #
 ################################################################################
@@ -465,7 +361,6 @@ networks:
   claudygod-internal:
     driver: bridge
     internal: true
-    name: claudygod-internal
   claudygod-egress:
     driver: bridge
 
@@ -475,10 +370,3 @@ networks:
 ################################################################################
 volumes:
   redis_data:
-    name: claudygod_redis_data
-  api_uploads:
-    name: claudygod_api_uploads
-  api_logs:
-    name: claudygod_api_logs
-  grafana_data:
-    name: claudygod_grafana_data
