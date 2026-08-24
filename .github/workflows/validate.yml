@@ -23,11 +23,10 @@ jobs:
       - name: Validate configuration and scripts
         run: ./scripts/validate.sh
       - name: Scan repository for secrets
-        uses: gitleaks/gitleaks-action@v2.3.7
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.0 \
+            detect --source=/repo --no-banner --redact
       - name: Scan infrastructure configuration
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          scan-type: config
-          scan-ref: .
-          severity: HIGH,CRITICAL
-          exit-code: '1'
+        run: |
+          docker run --rm -v "$PWD:/repo" aquasec/trivy:0.69.3 \
+            config --severity HIGH,CRITICAL --exit-code 1 /repo

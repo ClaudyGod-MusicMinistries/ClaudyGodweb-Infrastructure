@@ -41,32 +41,32 @@ jobs:
           printf 'service=%s\ntag=%s\n' "$INPUT_SERVICE" "$INPUT_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Deploy through canonical release script
-        uses: appleboy/ssh-action@v1.2.2
         env:
           GHCR_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           SERVICE: ${{ steps.release.outputs.service }}
           TAG: ${{ steps.release.outputs.tag }}
           DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          timeout: 300s
-          command_timeout: 15m
-          envs: GHCR_TOKEN,GHCR_USER,SERVICE,TAG,DEPLOY_PATH
-          script: |
-            set -euo pipefail
-            cd "$DEPLOY_PATH"
-            git fetch --quiet origin main
-            git diff --quiet && git diff --cached --quiet || { echo "Deployment checkout has local changes" >&2; exit 1; }
-            git checkout --detach origin/main
-            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
-            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-            export TAG
-            case "$SERVICE" in
-              api) ./scripts/release.sh deploy api ;;
-              web) ./scripts/release.sh deploy web ;;
-              all) ./scripts/release.sh deploy all ;;
-            esac
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
+          trap 'rm -rf "$RUNNER_TEMP/ssh"' EXIT
+          printf -v quoted_path '%q' "$DEPLOY_PATH"
+          printf -v quoted_user '%q' "$GHCR_USER"
+          printf -v quoted_tag '%q' "$TAG"
+          printf -v quoted_service '%q' "$SERVICE"
+          printf '%s' "$GHCR_TOKEN" | ssh \
+            -i "$RUNNER_TEMP/ssh/key" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "set -euo pipefail; cd $quoted_path; git fetch --quiet origin main; git diff --quiet; git diff --cached --quiet; git checkout --detach origin/main; docker login ghcr.io --username $quoted_user --password-stdin >/dev/null; trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT; TAG=$quoted_tag ./scripts/release.sh deploy $quoted_service"
