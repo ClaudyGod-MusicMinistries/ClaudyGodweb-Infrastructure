@@ -41,7 +41,7 @@ jobs:
           printf 'service=%s\ntag=%s\n' "$INPUT_SERVICE" "$INPUT_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Deploy through canonical release script
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         env:
           GHCR_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
