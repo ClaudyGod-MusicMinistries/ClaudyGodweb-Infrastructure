@@ -66,7 +66,7 @@ jobs:
             trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             export TAG
             case "$SERVICE" in
-              api) ./scripts/deploy.sh --api-only ;;
-              web) ./scripts/deploy.sh --web-only ;;
-              all) ./scripts/deploy.sh ;;
+              api) ./scripts/release.sh deploy api ;;
+              web) ./scripts/release.sh deploy web ;;
+              all) ./scripts/release.sh deploy all ;;
             esac

@@ -27,9 +27,9 @@ live outside the repository and backup bucket.
 
 ```bash
 TAG=sha-a1b2c3d make deploy
-./scripts/deploy.sh --api-only
-./scripts/deploy.sh --web-only
-make health-check
+make deploy-api
+make deploy-web
+make health
 make rollback
 ```
 
@@ -49,9 +49,9 @@ make ps
 make logs
 make maintenance
 make maintenance-off
-make db-backup
-make db-list
-make db-restore
+make backup
+make backups
+make restore
 ```
 
 Maintenance routing is hostname-scoped and cannot intercept unrelated services

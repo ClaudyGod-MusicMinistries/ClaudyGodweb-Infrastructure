@@ -1,6 +1,7 @@
 # Deployment and rollback runbook
 
-Deploy an immutable release with `TAG=sha-<commit> make deploy`. Use the GitHub
+Deploy an immutable release with `TAG=sha-<commit> make deploy`. Targeted
+releases use `make deploy-api` or `make deploy-web`. Use the GitHub
 production environment for normal releases and require an approving reviewer.
 
 The release script saves previous application images under `.releases/`, runs
