@@ -15,9 +15,12 @@ logs/
 
 # Database exports and backups (local only, not for repo)
 backups/
+.releases/
 dumps/
 *.sql
 *.sql.gz
+*.sql.gz.age
+*age-key*
 
 # Container artifacts
 docker/*/node_modules

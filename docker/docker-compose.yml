@@ -44,7 +44,6 @@ services:
   ##############################################################################
   redis:
     image: redis:7.4-alpine
-    container_name: claudygod_redis
     user: redis
     restart: unless-stopped
     <<: *default-security
@@ -66,7 +65,7 @@ services:
 
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      REDIS_MAX_MEMORY_POLICY: ${REDIS_MAX_MEMORY_POLICY:-allkeys-lru}
+      REDIS_MAX_MEMORY_POLICY: ${REDIS_MAX_MEMORY_POLICY:-noeviction}
 
     command:
       - sh
@@ -100,7 +99,6 @@ services:
   ##############################################################################
   migrate:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
-    container_name: claudygod_migrate
     restart: "no"
     pull_policy: always
     <<: *default-security
@@ -108,11 +106,8 @@ services:
     tmpfs:
       - /tmp
 
-    # Use host network so the container inherits the host's DNS and routing.
-    # This bypasses Docker's embedded DNS (which cannot forward to upstream
-    # resolvers in this environment) and lets the container reach Supabase
-    # directly, exactly as the host can.
-    network_mode: "host"
+    networks:
+      - claudygod-egress
 
     environment:
       TZ: ${TZ:-UTC}
@@ -161,6 +156,7 @@ services:
       claudygod-internal:
         aliases:
           - claudygod-api-internal
+      claudygod-egress:
     expose:
       - "8080"
 
@@ -245,6 +241,15 @@ services:
       redis:
         condition: service_healthy
 
+    healthcheck:
+      # Image-independent listener check; public /healthz readiness is enforced
+      # by the release gate and Traefik.
+      test: ["CMD-SHELL", "grep -qi ':1F90 ' /proc/net/tcp /proc/net/tcp6"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
     deploy:
       resources:
         limits:
@@ -274,6 +279,8 @@ services:
       # Service
       traefik.http.services.claudygod-api.loadbalancer.server.port: "8080"
       traefik.http.services.claudygod-api.loadbalancer.passhostheader: "true"
+      traefik.http.services.claudygod-api.loadbalancer.healthcheck.path: "/healthz"
+      traefik.http.services.claudygod-api.loadbalancer.healthcheck.interval: "15s"
 
 
   ##############################################################################
@@ -281,7 +288,6 @@ services:
   ##############################################################################
   claudygod-web:
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
-    container_name: claudygod_web
     restart: unless-stopped
     pull_policy: always
     <<: *default-security
@@ -334,7 +340,14 @@ services:
 
     depends_on:
       claudygod-api:
-        condition: service_started
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qi ':0BB8 ' /proc/net/tcp /proc/net/tcp6"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
     deploy:
       resources:
@@ -378,7 +391,7 @@ services:
   ##############################################################################
   grafana:
     image: grafana/grafana:11.3.0
-    container_name: claudygod_grafana
+    profiles: ["monitoring"]
     restart: unless-stopped
     <<: *default-security
 
@@ -394,17 +407,25 @@ services:
 
     environment:
       TZ: ${TZ:-UTC}
-      GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_COOKIE_SECURE: "true"
       GF_SECURITY_COOKIE_SAMESITE: "strict"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN}
       GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus:9090}
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 
     deploy:
@@ -445,6 +466,8 @@ networks:
     driver: bridge
     internal: true
     name: claudygod-internal
+  claudygod-egress:
+    driver: bridge
 
 
 ################################################################################

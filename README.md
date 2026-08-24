@@ -1,107 +1,71 @@
 # ClaudyGod production infrastructure
 
-Docker Compose infrastructure for ClaudyGod Music Ministries, designed to run
-behind a server-wide Traefik proxy.
+Production infrastructure for ClaudyGod Music Ministries on a hardened Docker
+Compose VPS. PostgreSQL and object storage are managed by Supabase; ingress and
+monitoring are platform dependencies owned outside this repository.
 
-## Runtime architecture
+## Prerequisites
 
-- Next.js web application from GHCR
-- ASP.NET Core API from GHCR
-- Redis cache/session store on an isolated network
-- Supabase managed PostgreSQL
-- Brevo SMTP, Paystack, and AIProvider integrations
-- Grafana connected to the shared Prometheus service
-- Shared Traefik ingress and automatic TLS
+- Linux, Docker Engine, Docker Compose v2, `curl`, and `age`
+- external Docker network `traefik-public`
+- shared Traefik entrypoints `web` and `websecure` and resolver `letsencrypt`
+- private GHCR access and production DNS
+- a reachable Prometheus service when the monitoring profile is used
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for trust boundaries, delivery flow,
-reliability targets, and the improvement roadmap.
-
-## Requirements
-
-- Linux host with Docker Engine and Docker Compose v2
-- Existing external Docker network named `traefik-public`
-- Shared Traefik proxy configured with `web`, `websecure`, and `letsencrypt`
-- DNS for the web, API, and Grafana domains
-- GHCR access and managed-service credentials
-
-## First deployment
+## Configure and validate
 
 ```bash
 cp .env.example .env
-# Fill every required value; never commit .env.
+# Replace every placeholder and set an immutable sha-* TAG.
 make validate
-make deploy
-make health-check
 ```
 
-Generate independent credentials with `openssl rand -base64 48`. At minimum,
-replace every `CHANGE_ME` value, including `JWT_KEY`, `ENCRYPTION_KEY`,
-`INTERNAL_API_KEY`, `REDIS_PASSWORD`, and `GRAFANA_ADMIN_PASSWORD`.
+Keep `.env` mode `0600`. Never commit it. The backup encryption identity must
+live outside the repository and backup bucket.
 
-`make deploy` runs preflight checks, pulls images, applies database migrations,
-reconciles the stack, and fails if public health checks do not recover. For
-targeted deployments:
+## Release
 
 ```bash
-./scripts/deploy.sh --api-only
-./scripts/deploy.sh --web-only
-TAG=sha-abcdef1 ./scripts/deploy.sh
+TAG=sha-a1b2c3d make deploy
+make deploy-api
+make deploy-web
+make health
+make rollback
 ```
 
-Use immutable commit-SHA tags for controlled production releases and rollbacks.
+`latest` is rejected. A release records the previous application images, runs
+forward-compatible migrations, deploys, waits for readiness, and attempts an
+application rollback on failure. Database migrations are never automatically
+reversed.
 
-## Common operations
+Normal production releases run through the GitHub `production` Environment.
+Configure required reviewers and `VPS_HOST`, `VPS_PORT`, `VPS_USER`,
+`VPS_SSH_KEY`, `VPS_DEPLOY_PATH`, and a read-only `GH_PAT` when required.
+
+## Operations
 
 ```bash
-make help
 make ps
 make logs
-make logs-api
-make logs-web
-make restart-api
 make maintenance
 make maintenance-off
+make backup
+make backups
+make restore
 ```
 
-## Validation and CI/CD
+Maintenance routing is hostname-scoped and cannot intercept unrelated services
+on the shared proxy. Backups are age-encrypted before reaching local disk and
+may be copied to a versioned private S3 bucket.
 
-`make lint` validates the rendered Compose model, parses all shell scripts, runs
-ShellCheck when installed, and checks for obvious committed credentials. Pull
-requests run the same validation in GitHub Actions.
+## Documentation
 
-Production deploys use the GitHub `production` Environment and are serialized
-to prevent overlapping migrations. Configure required reviewers and these
-secrets:
+- [Architecture](ARCHITECTURE.md)
+- [Security model](docs/security-model.md)
+- [Deployment runbook](docs/runbooks/deployment.md)
+- [Backup and restore](docs/runbooks/backup-restore.md)
+- [Incident response](docs/runbooks/incident-response.md)
+- [Architecture decisions](docs/adr/)
 
-- `VPS_HOST`, `VPS_PORT`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_DEPLOY_PATH`
-- `GH_PAT` with read-only package access when GHCR packages are private
-
-The VPS keeps its production `.env`; CI does not copy secrets into the repo.
-
-## Database recovery
-
-Supabase backups/PITR are the primary recovery mechanism. The scripts here add
-portable logical exports:
-
-```bash
-make db-backup
-make db-list
-make db-restore                 # restores the newest local export
-./scripts/restore.sh backups/claudygod_db_YYYYMMDDTHHMMSSZ.sql.gz
-```
-
-Restores are destructive and require typing `RESTORE`. Test restoration against
-a separate staging project quarterly. Set `AWS_BACKUP_BUCKET` to copy verified
-exports to a private S3 bucket with server-side encryption.
-
-## Repository layout
-
-```text
-.github/workflows/   validation and production deployment
-docker/              Compose stack, Grafana provisioning, maintenance page
-scripts/             deploy, validate, backup, and restore automation
-ARCHITECTURE.md      production design and improvement roadmap
-```
-
-The Compose model, `.env.example`, this README, and `ARCHITECTURE.md` are the
-canonical infrastructure specifications.
+The shared proxy contract is documented under `docker/traefik/`; its actual
+configuration belongs in the platform repository.

@@ -30,7 +30,6 @@ services:
 
   maintenance:
     image: nginx:alpine
-    container_name: claudygod_maintenance
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -71,8 +70,9 @@ services:
       # Normal routers have priority ~100-500
       - "traefik.enable=true"
 
-      # Catch-all router for all domains
-      - "traefik.http.routers.maintenance.rule=PathPrefix(`/`)"
+      # Scope maintenance mode to this application. A path-only rule on the
+      # shared proxy would intercept unrelated applications.
+      - "traefik.http.routers.maintenance.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`) || Host(`${API_DOMAIN}`) || Host(`${GRAFANA_DOMAIN}`)) && PathPrefix(`/`)"
       - "traefik.http.routers.maintenance.entrypoints=web,websecure"
       - "traefik.http.routers.maintenance.service=maintenance"
       - "traefik.http.routers.maintenance.priority=1000"

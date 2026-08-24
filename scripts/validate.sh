@@ -1,39 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-ENV_FILE="${ENV_FILE:-$PROJECT_ROOT/.env.example}"
-COMPOSE_FILE="$PROJECT_ROOT/docker/docker-compose.yml"
-
-fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+production=false
+if [[ "${1:-}" == --production ]]; then
+  production=true
+else
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ENV_FILE="${ENV_FILE:-$(dirname "$script_dir")/.env.example}"
+fi
+# shellcheck source=lib/common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 pass() { printf 'OK: %s\n' "$*"; }
 
-command -v docker >/dev/null 2>&1 || fail "docker is required"
-docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required"
-[[ -r "$ENV_FILE" ]] || fail "environment file is not readable: $ENV_FILE"
+load_env "$production"
+if $production; then validate_release_env; pass "production environment"; fi
+require_docker
+compose config --quiet
+compose_maintenance config --quiet
+pass "Compose model and maintenance overlay"
 
-docker compose \
-  --env-file "$ENV_FILE" \
-  --project-directory "$PROJECT_ROOT" \
-  -f "$COMPOSE_FILE" \
-  config --quiet
-pass "Docker Compose configuration"
-
-for script in "$PROJECT_ROOT"/scripts/*.sh; do
-  bash -n "$script"
-done
+for script in "$SCRIPT_DIR"/*.sh "$SCRIPT_DIR"/lib/*.sh; do bash -n "$script"; done
 pass "shell syntax"
-
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck "$PROJECT_ROOT"/scripts/*.sh
+  shellcheck "$SCRIPT_DIR"/*.sh "$SCRIPT_DIR"/lib/*.sh
   pass "ShellCheck"
 else
-  printf 'SKIP: ShellCheck is not installed\n'
+  info "SKIP: ShellCheck is not installed"
 fi
 
-if git -C "$PROJECT_ROOT" grep -nE \
-  '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|ghp_[A-Za-z0-9]{30,}|sk_live_[A-Za-z0-9]{20,})' -- .; then
-  fail "potential credential material detected"
+if grep -nE '^[[:space:]]*container_name:' "$COMPOSE_FILE" "$MAINTENANCE_FILE"; then die "fixed container_name entries are prohibited"; fi
+if grep -nE 'image:.*:latest|TAG=latest' "$COMPOSE_FILE" "$PROJECT_ROOT/.env.example"; then die "mutable latest releases are prohibited"; fi
+grep -q 'Host(`\${DOMAIN}`)' "$MAINTENANCE_FILE" || die "maintenance router must be hostname-scoped"
+pass "infrastructure policies"
+
+if git -C "$PROJECT_ROOT" grep -nE '(BEGIN (RSA|OPENSSH|EC|AGE) PRIVATE KEY|AGE-SECRET-KEY-|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|sk_live_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})' -- .; then
+  die "potential credential material detected"
 fi
 pass "basic secret scan"

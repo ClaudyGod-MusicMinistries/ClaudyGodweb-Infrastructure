@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -22,3 +22,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes shellcheck
       - name: Validate configuration and scripts
         run: ./scripts/validate.sh
+      - name: Scan repository for secrets
+        uses: gitleaks/gitleaks-action@v2.3.7
+      - name: Scan infrastructure configuration
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: '1'
