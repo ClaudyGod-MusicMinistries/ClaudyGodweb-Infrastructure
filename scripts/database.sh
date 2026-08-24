@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 # shellcheck source=lib/common.sh
+# shellcheck disable=SC1091 -- resolved relative to this script at runtime
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 POSTGRES_IMAGE=""

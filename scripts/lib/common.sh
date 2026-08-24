@@ -13,12 +13,14 @@ info() { printf '%s\n' "$*"; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
 
 load_env() {
-  local enforce_permissions="${1:-true}" mode requested_tag="${TAG:-}"
+  local enforce_permissions="${1:-true}" mode requested_tag="${TAG:-}" invalid_line
   [[ -r "$ENV_FILE" ]] || die "environment file not found: $ENV_FILE"
   if [[ "$enforce_permissions" == true ]]; then
     mode="$(stat -c '%a' "$ENV_FILE")"
     [[ "$mode" == 600 || "$mode" == 400 ]] || die "$ENV_FILE must have mode 0600 or 0400 (currently $mode)"
   fi
+  invalid_line="$(grep -nE "^[A-Za-z_][A-Za-z0-9_]*=[^\"']*[[:space:]]" "$ENV_FILE" | head -n1 || true)"
+  [[ -z "$invalid_line" ]] || die "unquoted whitespace in $ENV_FILE: $invalid_line"
   # shellcheck source=/dev/null
   source "$ENV_FILE"
   [[ -z "$requested_tag" ]] || TAG="$requested_tag"

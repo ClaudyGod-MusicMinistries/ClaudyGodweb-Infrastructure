@@ -41,6 +41,7 @@ reversed.
 Normal production releases run through the GitHub `production` Environment.
 Configure required reviewers and `VPS_HOST`, `VPS_PORT`, `VPS_USER`,
 `VPS_SSH_KEY`, `VPS_DEPLOY_PATH`, and a read-only `GH_PAT` when required.
+Also configure `VPS_KNOWN_HOSTS` with the pinned SSH host-key line for the VPS.
 
 ## Operations
 
