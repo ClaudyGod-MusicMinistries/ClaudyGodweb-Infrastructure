@@ -23,7 +23,7 @@ jobs:
       - name: Validate configuration and scripts
         run: ./scripts/validate.sh
       - name: Scan repository for secrets
-        uses: gitleaks/gitleaks-action@v2.3.7
+        uses: gitleaks/gitleaks-action@v3.0.0
       - name: Scan infrastructure configuration
         uses: aquasecurity/trivy-action@0.33.1
         with:
