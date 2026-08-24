@@ -1,6 +1,6 @@
 .PHONY: help deploy pull logs logs-api logs-web logs-redis logs-traefik ps \
         restart restart-api restart-web down maintenance maintenance-off \
-        db-backup db-restore db-list db-shell \
+        db-backup db-restore db-list db-shell rollback \
         clean clean-all lint env-check version health-check info all status validate \
         rebuild rebuild-clean rebuild-images rebuild-deploy
 
@@ -69,6 +69,9 @@ help: ## Display this help message
 deploy: ## Validate, migrate, deploy, and verify the full stack
 	$(PROJECT_ROOT)/scripts/deploy.sh
 
+rollback: ## Restore the previous API and web images (does not reverse migrations)
+	$(PROJECT_ROOT)/scripts/rollback.sh
+
 pull: ## Pull latest images from GHCR without deploying
 	@echo "$(BLUE)▶ Pulling latest images...$(NC)"
 	$(DOCKER_COMPOSE) pull
@@ -121,13 +124,13 @@ down: ## Stop and remove all containers (keeps volumes)
 
 maintenance: ## Enable maintenance mode (503 maintenance page via Traefik)
 	@echo "$(YELLOW)⚠ Enabling maintenance mode...$(NC)"
-	@docker rm -f claudygod_maintenance >/dev/null 2>&1 || true
+	@$(DOCKER_COMPOSE_MAINT) rm -sf maintenance >/dev/null 2>&1 || true
 	$(DOCKER_COMPOSE_MAINT) up -d maintenance
 	@echo "$(YELLOW)Maintenance mode enabled. Disable with: make maintenance-off$(NC)"
 
 maintenance-off: ## Disable maintenance mode and bring stack back live
 	@echo "$(BLUE)▶ Disabling maintenance mode...$(NC)"
-	@docker rm -f claudygod_maintenance >/dev/null 2>&1 || true
+	@$(DOCKER_COMPOSE_MAINT) rm -sf maintenance >/dev/null 2>&1 || true
 	$(DOCKER_COMPOSE) up -d --remove-orphans
 	@echo "$(GREEN)✓ Services live again!$(NC)"
 
@@ -145,7 +148,7 @@ db-restore: ## Restore PostgreSQL database from backup (interactive)
 
 db-list: ## List all available database backups
 	@echo "$(BLUE)Available backups:$(NC)"
-	@ls -lht $(PROJECT_ROOT)/backups/*.sql.gz 2>/dev/null | awk '{print $$9, "(" $$5 ")"}' || echo "No backups found."
+	@ls -lht $(PROJECT_ROOT)/backups/*.sql.gz.age 2>/dev/null | awk '{print $$9, "(" $$5 ")"}' || echo "No backups found."
 
 db-shell: ## Open interactive psql shell to Supabase
 	@echo "$(BLUE)▶ Connecting to Supabase Postgres...$(NC)"
@@ -157,50 +160,22 @@ db-shell: ## Open interactive psql shell to Supabase
 ################################################################################
 
 clean: ## Remove stopped containers and dangling images
-	@echo "$(YELLOW)▶ Cleaning up Docker artifacts...$(NC)"
-	docker system prune -f
+	@echo "$(YELLOW)▶ Removing stopped containers for this project...$(NC)"
+	$(DOCKER_COMPOSE) rm -f
 	@echo "$(GREEN)✓ Cleanup complete!$(NC)"
 
 clean-all: ## DESTRUCTIVE: Remove all claudygod containers, images, and volumes
 	@echo "$(RED)⚠ This will delete ALL ClaudyGod containers, images, and volumes!$(NC)"
-	@echo "Press Ctrl+C to cancel..."
-	@sleep 3
+	@read -r -p "Type DELETE-CLAUDYGOD to continue: " answer; \
+	  test "$$answer" = "DELETE-CLAUDYGOD" || { echo "Cancelled."; exit 1; }
 	$(DOCKER_COMPOSE) down -v --remove-orphans
-	docker system prune -af --volumes
 	@echo "$(GREEN)✓ Full cleanup complete!$(NC)"
 
 lint: ## Validate Compose, shell syntax, ShellCheck, and obvious secrets
 	@ENV_FILE=$(ENV_FILE) $(PROJECT_ROOT)/scripts/validate.sh
 
 env-check: ## Verify .env file has all required variables filled in
-	@echo "$(BLUE)▶ Checking environment variables...$(NC)"
-	@export $$(grep -v '^#' $(ENV_FILE) | grep -v '^\s*$$' | xargs); \
-	missing=0; \
-	for var in DOMAIN API_DOMAIN TAG REGISTRY BACKEND_IMAGE FRONTEND_IMAGE \
-	           SUPABASE_CONNECTION_STRING REDIS_PASSWORD JWT_KEY ENCRYPTION_KEY \
-	           INTERNAL_API_KEY \
-	           EMAIL_SMTP_HOST EMAIL_SMTP_USERNAME EMAIL_SMTP_PASSWORD \
-	           EMAIL_FROM_ADDRESS AI_MODEL; do \
-	  val=$$(eval echo "\$$$$var"); \
-	  if [ -z "$$val" ] || echo "$$val" | grep -qE "CHANGE[_-]ME"; then \
-	    printf "  $(RED)✗ Missing or placeholder:$(NC) %s\n" "$$var"; missing=1; \
-	  elif [ "$$var" = "INTERNAL_API_KEY" ] && [ "$${#val}" -lt 32 ]; then \
-	    printf "  $(RED)✗ Must contain at least 32 characters:$(NC) %s\n" "$$var"; missing=1; \
-	  else \
-	    printf "  $(GREEN)✓$(NC) %s\n" "$$var"; \
-	  fi; \
-	done; \
-	echo ""; \
-	echo "$(YELLOW)Optional (set when ready):$(NC)"; \
-	for var in PAYSTACK_SECRET_KEY NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY AI_PROVIDER_API_KEY; do \
-	  val=$$(eval echo "\$$$$var"); \
-	  if [ -z "$$val" ] || echo "$$val" | grep -q "CHANGE_ME"; then \
-	    printf "  $(YELLOW)⊘$(NC) %s (not yet configured)\n" "$$var"; \
-	  else \
-	    printf "  $(GREEN)✓$(NC) %s\n" "$$var"; \
-	  fi; \
-	done; \
-	exit $$missing
+	@ENV_FILE=$(ENV_FILE) $(PROJECT_ROOT)/scripts/env-check.sh
 
 version: ## Show versions of key components
 	@echo "$(BLUE)Component Versions:$(NC)"
@@ -213,19 +188,7 @@ version: ## Show versions of key components
 	@echo "  Next.js:         14+"
 
 health-check: ## Check health of all public endpoints
-	@echo "$(BLUE)▶ Performing health checks...$(NC)"
-	@export $$(grep -v '^#' $(ENV_FILE) | grep -v '^\s*$$' | xargs); \
-	failed=0; \
-	for url in "https://$$DOMAIN/" "https://$$API_DOMAIN/healthz"; do \
-	  code=$$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 "$$url") || code="000"; \
-	  if echo "$$code" | grep -qE '^2'; then \
-	    printf "  $(GREEN)✓$(NC) %s → %s\n" "$$url" "$$code"; \
-	  else \
-	    printf "  $(RED)✗$(NC) %s → %s\n" "$$url" "$$code"; \
-	    failed=1; \
-	  fi; \
-	done; \
-	exit $$failed
+	$(PROJECT_ROOT)/scripts/health-check.sh
 
 info: ## Display deployment information
 	@echo "$(BLUE)╔════════════════════════════════════════════════════════╗$(NC)"
@@ -265,8 +228,6 @@ rebuild: rebuild-clean rebuild-images rebuild-deploy ## Complete rebuild from sc
 rebuild-clean: ## Remove containers & images (preserves volumes & Let's Encrypt)
 	@echo "$(BLUE)▶ Cleaning old containers and images...$(NC)"
 	$(DOCKER_COMPOSE) down --remove-orphans
-	@docker rmi ghcr.io/claudygod-musicministries/cgm-api:latest 2>/dev/null || true
-	@docker rmi ghcr.io/claudygod-musicministries/cgm-web:latest 2>/dev/null || true
 	@echo "$(GREEN)✓ Clean complete (Let's Encrypt preserved)$(NC)"
 
 rebuild-images: ## Pull fresh images from GHCR

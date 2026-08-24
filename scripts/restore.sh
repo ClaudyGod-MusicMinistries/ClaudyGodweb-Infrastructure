@@ -17,10 +17,11 @@ command -v docker >/dev/null 2>&1 || die "docker is required"
 
 BACKUP_FILE="${1:-}"
 if [[ -z "$BACKUP_FILE" ]]; then
-  BACKUP_FILE="$(find "$BACKUP_DIR" -type f -name 'claudygod_db_*.sql.gz' -print 2>/dev/null | sort -r | head -n 1)"
+  BACKUP_FILE="$(find "$BACKUP_DIR" -type f -name 'claudygod_db_*.sql.gz.age' -print 2>/dev/null | sort -r | head -n 1)"
 fi
 [[ -n "$BACKUP_FILE" && -f "$BACKUP_FILE" ]] || die "no backup file found"
-gzip -t "$BACKUP_FILE" || die "backup is corrupt or is not gzip data"
+command -v age >/dev/null 2>&1 || die "age is required to decrypt backups"
+[[ -r "${BACKUP_AGE_IDENTITY_FILE:-}" ]] || die "BACKUP_AGE_IDENTITY_FILE must point to a readable age identity"
 
 printf 'Selected: %s\n' "$BACKUP_FILE"
 printf '%s\n' 'WARNING: this applies DROP/CREATE statements to the configured managed database.'
@@ -28,7 +29,7 @@ printf '%s' 'Type RESTORE to continue: '
 read -r CONFIRMATION
 [[ "$CONFIRMATION" == "RESTORE" ]] || die "restore cancelled"
 
-gunzip -c "$BACKUP_FILE" | docker run --rm -i \
+age --decrypt --identity "$BACKUP_AGE_IDENTITY_FILE" "$BACKUP_FILE" | gunzip -c | docker run --rm -i \
   -e DATABASE_URL="$SUPABASE_CONNECTION_STRING" \
   "$POSTGRES_IMAGE" \
   sh -ec 'psql --dbname="$DATABASE_URL" --set=ON_ERROR_STOP=1'

@@ -2,78 +2,68 @@
 
 ## System context
 
-Internet traffic terminates at the server-wide Traefik proxy. Traefik discovers
-the web and API containers on the external `traefik-public` network. The web,
-API, and Redis services also communicate over the isolated
-`claudygod-internal` network. PostgreSQL and SMTP are managed services.
-
 ```text
-Users -> Traefik/TLS -> Next.js web -> ASP.NET API -> Supabase PostgreSQL
-                  \-> ASP.NET API  -> Redis
-                                    -> Brevo / Paystack / AIProvider
+Internet -> shared Traefik/TLS -> Next.js web -> ASP.NET API
+                              \-> ASP.NET API -> Supabase PostgreSQL
+                                                Redis
+                                                Supabase object storage
+                                                SMTP / payment / AI providers
 
-Operators -> Grafana -> shared Prometheus
-GitHub Actions -> SSH deployment -> Docker Compose on production VPS
+Operators -> external monitoring platform -> Grafana / Prometheus / alerts
+GitHub Actions -> SSH -> canonical release script -> Docker Compose VPS
 ```
 
-## Trust boundaries
+The platform repository owns the host baseline, firewall, shared ingress,
+Prometheus, alert routing, and external probes. This repository owns only the
+ClaudyGod services, application routing labels, release automation, encrypted
+logical backups, and runbooks.
 
-- Only Traefik joins the public ingress path; application ports are not
-  published on the host.
-- Redis is reachable only from the internal Docker network and requires
-  authentication.
-- The web-to-API credential is server-side (`INTERNAL_API_KEY`) and must never
-  be exposed through a `NEXT_PUBLIC_*` variable.
-- Production secrets live in the VPS `.env` and GitHub Environment secrets.
-  They are not stored in this repository.
-- Containers drop Linux capabilities and disallow privilege escalation. The
-  application containers use read-only root filesystems with explicit writable
-  mounts.
+## Network boundaries
 
-## Delivery workflow
+- `traefik-public` is an externally managed ingress network.
+- `claudygod-internal` is internal-only and carries web/API/Redis traffic.
+- `claudygod-egress` gives API and migration workloads external connectivity
+  without attaching migrations to ingress or host networking.
+- No application port is published on the host.
 
-1. Pull requests run Compose validation, shell parsing, ShellCheck, and a basic
-   credential scan.
-2. A production deployment is serialized through the GitHub `production`
-   environment. Configure required reviewers in repository settings.
-3. API deployment pulls the image, runs the one-shot migration, replaces the
-   API service, and verifies `/healthz`.
-4. Web deployment replaces only the web service and verifies the public root.
-5. Full deployments reconcile all runtime services and remove true orphans.
+Only trusted workloads may join the shared ingress network. The web-to-API
+credential authenticates the service, not the end user, and cannot replace
+normal authorization.
 
-Prefer immutable image digests or commit-SHA tags in production. `latest` is
-convenient but weakens auditability and deterministic rollback.
+## Reliability and delivery
 
-## Reliability model
+- Production uses immutable `sha-*` application tags.
+- Deployments are serialized and approved through a GitHub Environment.
+- API migrations use the expand/contract pattern.
+- Container and public readiness checks gate releases.
+- Previous application versions are recorded and restored after failed
+  readiness checks.
+- Redis uses `noeviction` because it stores sessions as well as cache data.
+- Managed database recovery is primary; encrypted logical exports provide an
+  independently portable recovery layer.
 
-- Docker restarts long-running services after process or host failure.
-- Redis data, uploads, API logs, and Grafana state use named volumes.
-- Database availability and point-in-time recovery are owned by Supabase; local
-  logical exports are an additional recovery layer, not a replacement.
-- Deployment fails when public health checks do not recover within the timeout.
-- Maintenance mode is a high-priority Traefik router returning HTTP 503.
+## Service objectives
 
-## Operational targets
+- Web and API monthly availability: 99.9%.
+- Non-AI API p95 latency: below 500 ms.
+- Database RPO: 24 hours until managed PITR is contractually verified.
+- Service RTO: 2 hours, tested quarterly.
 
-Initial service-level objectives should be agreed with the product owner:
+Alert on external endpoint failure, sustained 5xx responses, latency SLO burn,
+certificate expiry, container restart loops, disk or memory pressure, backup
+failure or staleness, and failed releases. Every alert must link to a runbook.
 
-- Public web availability: 99.9% monthly.
-- API availability: 99.9% monthly, measured at `/healthz`.
-- p95 server latency: below 500 ms for non-AI endpoints.
-- Recovery point objective: 24 hours until PITR/backup automation is verified.
-- Recovery time objective: 2 hours, tested quarterly.
+## Remaining platform obligations
 
-Alert on sustained 5xx rates, endpoint unavailability, certificate expiry,
-container restart loops, disk usage above 80%, memory pressure, failed backups,
-and failed deployments. Every alert must link to a runbook.
+The following cannot be completed inside this application repository and must
+be enforced by the platform and application repositories:
 
-## Improvement roadmap
+- VPS provisioning, firewall, SSH hardening, Docker updates, and scheduled jobs
+- shared Traefik and Prometheus deployment, dashboards, alerts, and log storage
+- SSO or private-network protection for Grafana
+- backend route allowlisting, end-user authorization, metrics, and distinct
+  liveness/readiness endpoints
+- repository/environment branch protection and required reviewers
+- managed-service PITR policy and bucket immutability
 
-1. Pin GitHub Actions and container images by digest and enable Dependabot.
-2. Add an external uptime monitor and alert routing (email/Slack/PagerDuty).
-3. Export application metrics and provision version-controlled Grafana
-   dashboards and alerts.
-4. Move runtime secrets to Docker secrets or a dedicated secret manager.
-5. Add automated restore testing into an isolated Supabase staging project.
-6. Move to a managed container platform only when scaling, availability, or
-   team-size requirements justify its operational cost.
+These are deployment prerequisites, not optional future architecture.
