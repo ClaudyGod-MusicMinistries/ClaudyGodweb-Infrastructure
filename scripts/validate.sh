@@ -7,8 +7,9 @@ if [[ "${1:-}" == --production ]]; then
 else
   ENV_FILE="${ENV_FILE:-$(dirname "$validation_script_dir")/.env.example}"
 fi
+# The shared library is resolved relative to this script at runtime.
 # shellcheck source=lib/common.sh
-# shellcheck disable=SC1091 -- resolved relative to this script at runtime
+# shellcheck disable=SC1091
 source "$validation_script_dir/lib/common.sh"
 pass() { printf 'OK: %s\n' "$*"; }
 
@@ -30,7 +31,8 @@ fi
 
 if grep -nE '^[[:space:]]*container_name:' "$COMPOSE_FILE" "$MAINTENANCE_FILE"; then die "fixed container_name entries are prohibited"; fi
 if grep -nE 'image:.*:latest|TAG=latest' "$COMPOSE_FILE" "$PROJECT_ROOT/.env.example"; then die "mutable latest releases are prohibited"; fi
-# shellcheck disable=SC2016 -- ${DOMAIN} must remain literal in the Compose file
+# ${DOMAIN} must remain literal in the Compose policy check.
+# shellcheck disable=SC2016
 grep -q 'Host(`\${DOMAIN}`)' "$MAINTENANCE_FILE" || die "maintenance router must be hostname-scoped"
 pass "infrastructure policies"
 
